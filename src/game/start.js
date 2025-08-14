@@ -12,9 +12,8 @@ const startGame = async (client, { targetChannelId, language }, templateSDK, cac
     const game = await templateSDK.game.getRandomByLanguage(language);
 
     if (!game) {
-        return await client.messaging.sendChannelMessage(
-            targetChannelId,
-            client.phrase.getByLanguageAndName(language, `${client.config.keyword}_start_error_no_game_available_message`)
+        return await command.reply(
+            command.getPhrase(`${client.config.keyword}_start_error_no_game_available_message`)
         )
     }
 
@@ -32,7 +31,7 @@ const startGame = async (client, { targetChannelId, language }, templateSDK, cac
                 client.config.get('game.backupCacheTTL')
             ),
             client.utility.timer.add(
-                `gameTimeout:${targetChannelId}`,
+                `gameTimeout.channelId:${targetChannelId}`,
                 'gameTimeout',
                 {
                     targetChannelId
@@ -46,10 +45,9 @@ const startGame = async (client, { targetChannelId, language }, templateSDK, cac
         await client.utility.delay(delay);
     }
 
-    return await client.messaging.sendChannelMessage(
-        targetChannelId,
+    return await command.reply(
         client.utility.string.replace(
-            client.phrase.getByLanguageAndName(language, `${client.config.keyword}_game_message`),
+            command.getPhrase( `${client.config.keyword}_game_message`),
             {
                 word: game.word.split('').join(' '),
             }
@@ -66,7 +64,7 @@ const handleCommand = async (client, command, templateSDK, cache) => {
         if (cached) {
             return await command.reply(
                 client.utility.string.replace(
-                    client.phrase.getByLanguageAndName(command.language, `${client.config.keyword}_game_start_error_in_progress_message`),
+                    command.getPhrase(`${client.config.keyword}_game_start_error_in_progress_message`),
                     {
                         word: game.word.split('').join(' '),
                     }
@@ -83,15 +81,7 @@ const handleCommand = async (client, command, templateSDK, cache) => {
     }
 }
 
-const exports = {
-    startGame,
-    handleCommand
-}
-
-export {
-    startGame,
+export default {
     handleCommand,
-
-    exports as default
+    startGame
 }
-

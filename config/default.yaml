@@ -6,6 +6,7 @@ framework:
     email:
     password:
     onlineState: 1
+    apiKey: 
 
   join:
     limit: 15 # the amount of groups the bot is allowed in

@@ -1,14 +1,9 @@
 import start from './start.js';
 import onChannelMessage from './onChannelMessage.js';
+import timeout from './timeout.js';
 
-const exports = {
-    start,
-    onChannelMessage
+export default {
+  start,
+  onChannelMessage,
+  timeout
 };
-
-export {
-    start,
-    onChannelMessage,
-
-    exports as default
-}

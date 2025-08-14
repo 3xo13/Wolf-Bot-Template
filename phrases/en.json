@@ -32,16 +32,16 @@
         "value": "get"
     },
     {
-        "name": "{keyword}_command_group",
-        "value": "group"
+        "name": "{keyword}_command_channel",
+        "value": "channel"
     },
     {
-        "name": "{keyword}_group_profile_message",
+        "name": "{keyword}_channel_profile_message",
         "value": "Name: {name} (ID {id})\nDescription: {description}\nLevel: {level} ({percentage}%)\nLanguage: {language}\nMembers: {members}\n\nOwned By: {ownerNickname} (ID {ownerSubscriberId})"
     },
     {
-        "name": "{keyword}_group_profile_error_doesnt_exist_message",
-        "value": "(N) {nickname} (ID {subscriberId}), no such group exists with ID {id}"
+        "name": "{keyword}_channel_profile_error_doesnt_exist_message",
+        "value": "(N) {nickname} (ID {subscriberId}), no such channel exists with ID {id}"
     },
     {
         "name": "{keyword}_command_subscriber",
@@ -64,7 +64,7 @@
         "value": "{name} (ID {id})"
     },
     {
-        "name": "{keyword}_group_no_avatar_message",
+        "name": "{keyword}_channel_no_avatar_message",
         "value": "Group does not have an avatar"
     },
     {
