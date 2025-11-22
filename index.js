@@ -1,66 +1,42 @@
-import { WOLF, Command } from 'wolf.js';
-import TemplateSDK from './src/TemplateSDK/TemplateSDK.js';
-
-import Cache from './src/cache/index.js';
-import get from './src/get/index.js';
-import help from './src/help/index.js';
-import game from './src/game/index.js';
-
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { WOLF } from 'wolf.js';
 const client = new WOLF();
-const cache = new Cache();
-const templateSDK = new TemplateSDK();
-
-const keyword = client.config.keyword;
-
-client.commandHandler.register(
-  [
-    new Command(`${keyword}_command_${keyword}`, { both: command => help(client, command) },
-      [
-        new Command(`${keyword}_command_help`, { both: command => help(client, command) }),
-        new Command(`${keyword}_command_start`, { channel: command => game.start(client, command, templateSDK, cache) }),
-        new Command(`${keyword}_command_get`, { channel: command => help(client, command) },
-          [
-            new Command(`${keyword}_command_channel`, { channel: command => get.channel(client, command) }),
-            new Command(`${keyword}_command_subscriber`, { channel: command => get.subscriber(client, command) })
-          ]
-        ),
-        new Command(`${keyword}_command_join`, { both: client.utility.join }),
-        new Command(`${keyword}_command_leave`, { both: client.utility.leave })
-      ]
-    )
-
-    // You can add additional command to this array for different base commands
-  ]
-);
-
-client.on('ready', () => {
-  client.utility.timer.register(
-    {
-      gameTimeout: (data) => game.timeout(client, data, cache)
-    }
-  );
-
-  console.log('Ready');
+const httpServer = createServer();
+const io = new Server(httpServer, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  }
 });
 
-client.on('channelMessage', async message => {
-  if (message.isCommand) { return false; }
+io.on('connection', async (socket) => {
+  console.log('Client connected:', socket.id);
+  const loginRes = await client.login({
+    token: 'WE-4da5dce4-0081-4bb7-8810-b850ffe2d981',
+    host: '92.112.136.200',
+    port: '6144'
+  });
 
-  const timestamp = Date.now();
+  const res = await client.channel.list();
+  console.log('🚀 ~ loginRes:', loginRes);
+  console.log('🚀 ~ res:', res);
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+    client.logout();
+  });
 
-  const cached = await cache.getGame(message.targetChannelId);
+  socket.on('message', (data) => {
+    console.log('Received message:', data);
+    socket.emit('message', { echo: data });
+  });
 
-  if (!cached || cached.startedAt < Date.now()) { return false; }
-
-  return await game.onChannelMessage(client, message, cached, timestamp, cache);
+  socket.onAny((event, ...args) => {
+    console.log('Event received:', event, args);
+  });
 });
 
-client.on('privateMessage', async (message) => {
-  if (message.isCommand) { return false; }
-
-  message.language = (await message.subscriber()).language;
-
-  return await help(client, message);
+const PORT = 3000;
+httpServer.listen(PORT, () => {
+  console.log(`Socket.IO server running on port ${PORT}`);
 });
-
-client.login();

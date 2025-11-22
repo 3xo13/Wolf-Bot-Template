@@ -1,0 +1,59 @@
+// This file handles the setup of ad bot accounts for sending advertisements.
+// It validates input, connects ad bots, updates workflow state, and notifies the user.
+
+import setStepState from '../steps/setStepState.js'; // Used to update the workflow step
+import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js'; // Used to send notifications to the user
+import { adBotSteps } from '../constants/adBotSteps.js';
+import { updateEvents } from '../constants/updateEvents.js';
+import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
+import { checkBotStep } from '../steps/checkBotStep.js';
+import { updateTimers } from '../../helpers/updateTimers.js';
+
+export const handleAdAccountCommand = async (botManager, data) => {
+  botManager.setIsBusy(true);
+  try {
+    // Get the main bot instance
+    const mainBot = botManager.getMainBot();
+    const botType = botManager.getBotType();
+    const step = botManager.getBotType() === 'ad' ? 'members' : 'room';
+
+    if (!checkBotStep(botManager, step)) {
+      throw new Error('خطوة غير صحيحة\nالرجاء ادخال بوت الروومات أولا');
+    }
+    // Check if there are users to send ads to
+    if (botType === 'ad' && !botManager.getUsers().length) {
+      throw new Error('لا يوجد مستخدمين في القائمة');
+    }
+    // Validate the provided token format
+    if (!data.startsWith('WE-')) {
+      throw new Error('يرجى ادخال توكين الحساب بشكل صحيح\nWE-AAAAAAAA');
+    }
+    // Set the ad bot token for authentication
+    botManager.setAdBotToken(data);
+    // Get the number of ad bot instances to create
+    const instanceCount = botManager.config.baseConfig.instanceCount;
+    console.log('🚀 ~ handleCommand ~ instanceCount:', instanceCount);
+
+    updateTimers(botManager, 'ad');
+    botManager.startAdBotsReconnectScheduler();
+    // Connect the required number of ad bots
+    for (let i = 0; i < instanceCount; i++) {
+      const newAdBot = await botManager.connect('ad');
+    }
+    // Update the workflow state to indicate ad step
+    setStepState(botManager, 'ad');
+    // Notify the user that ad bots are ready and provide next step instructions
+    await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: data });
+    await sendPrivateMessage(
+      botManager.config.baseConfig.orderFrom,
+      `${adBotSteps.ad.description}\n${adBotSteps.ad.nextStepMessage}`,
+      mainBot, mainBot
+    );
+  } catch (error) {
+    // Log and re-throw any errors encountered during ad bot setup
+    console.log('🚀 ~ handleAdAccountCommand ~ error:', error);
+    throw error;
+  } finally {
+    botManager.setIsBusy(false);
+  }
+};
