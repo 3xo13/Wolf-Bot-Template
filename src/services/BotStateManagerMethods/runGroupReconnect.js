@@ -52,14 +52,21 @@ export async function runGroupReconnectFn (manager, type) {
     }
 
     // At this point all bots are idle and marked busy. Attempt to reconnect all of them concurrently.
-    const timeout = (type === 'room' ? manager.roomBotsReconnectTimer : manager.adBotsReconnectTimer) || (30 * 60 * 1000);
-    const reconnectPromises = bots.map(async (bot) => {
+    const roomConfig = type === 'room' ? manager.config.roomBotConfig : null;
+    const adConfig = type === 'ad' ? manager.config.adBotConfig : null;
+    const reconnectPromises = bots.map(async (bot, index) => {
       try {
-        if (typeof bot.disconnect === 'function') {
-          try { await bot.disconnect(); } catch (e) { }
+        if (typeof bot.logout === 'function') {
+          try { await bot.logout(); } catch (e) { }
         }
-        if (typeof bot.connect === 'function') {
-          try { await bot.connect(); } catch (e) {
+        if (typeof bot.login === 'function') {
+          try {
+            // For room bots, use token from manager's token array; for ad bots, use shared config
+            const loginConfig = type === 'room'
+              ? { ...roomConfig, token: manager.roomBotsTokens[index] }
+              : adConfig;
+            await bot.login(loginConfig);
+          } catch (e) {
             // if per-instance reconnect fails, log and continue
             console.warn(`${type} bot reconnect failed:`, e?.message || e);
           }

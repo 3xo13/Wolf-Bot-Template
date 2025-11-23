@@ -33,6 +33,10 @@ export const setStepState = (botManager, event) => {
         botManager.setCurrentStep(adBotSteps.sending.stepNumber);
         break;
 
+      case 'main':
+        botManager.setCurrentStep(adBotSteps.main.stepNumber);
+        break;
+
       default:
         throw new Error('unknown step for ad bot');
     }
@@ -60,6 +64,10 @@ export const setStepState = (botManager, event) => {
 
       case 'message':
         botManager.setCurrentStep(magicBotSteps.message.stepNumber);
+        break;
+
+      case 'main':
+        botManager.setCurrentStep(magicBotSteps.main.stepNumber);
         break;
 
       default:

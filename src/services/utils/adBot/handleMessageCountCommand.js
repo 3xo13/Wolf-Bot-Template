@@ -6,6 +6,7 @@ import { adBotSteps } from '../constants/adBotSteps.js';
 import { updateEvents } from '../constants/updateEvents.js';
 import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js';
 import { checkBotStep } from '../steps/checkBotStep.js';
+import handleBotStepReplay from '../steps/handleBotStepReplay.js';
 import setStepState from '../steps/setStepState.js';
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 
@@ -20,7 +21,8 @@ export const handleMessageCountCommand = async (command, botManager) => {
     const mainBot = botManager.getMainBot();
     // Parse and validate the message count value
     if (!checkBotStep(botManager, 'ad') || !botManager.getAdBots().length) {
-      throw new Error('خطوة غير صحيحة\nالرجاء ادخال بوتات الاعلانات أولا');
+      await handleBotStepReplay(botManager);
+      return;
     }
     // Update the message count in the workflow state
     botManager.setMessageCount(messageCount);

@@ -4,6 +4,7 @@ import { sendUpdateEvent } from '../../updates/sendUpdateEvent.js';
 import { sendPrivateMessage } from '../../messaging/sendPrivateMessage.js';
 import setStepState from '../../steps/setStepState.js';
 import { checkBotStep } from '../../steps/checkBotStep.js';
+import handleBotStepReplay from '../../steps/handleBotStepReplay.js';
 
 export const handleAdRunCommand = async (botManager) => {
   try {
@@ -11,7 +12,8 @@ export const handleAdRunCommand = async (botManager) => {
     const messagesLength = botManager.getMessages().length;
     const messagesCount = botManager.getMessageCount();
     if (!checkBotStep(botManager, 'message') || messagesCount !== messagesLength) {
-      throw new Error('خطوة غير صحيحة\nالرجاء ادخال الرسائل أولا');
+      await handleBotStepReplay(botManager);
+      return;
     }
     if (!botManager.getAdBots().length) {
       throw new Error('لا يوجد بوتات إعلانات متصلة');

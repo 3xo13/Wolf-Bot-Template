@@ -4,6 +4,7 @@ import { Server as SoketIOServer } from 'socket.io';
 import BotStateManager from './services/BotStateManager.js';
 import { handleAutoRun } from './services/utils/autoRun/handleAutoRun.js';
 import { updateEvents } from './services/utils/constants/updateEvents.js';
+import { sendUpdateEvent } from './services/utils/updates/sendUpdateEvent.js';
 const app = express();
 const PORT = 3000;
 
@@ -125,10 +126,11 @@ io.on('connection', async (clientSocket) => {
     });
 
     // Cleanup on disconnect
-    clientSocket.on('disconnect', () => {
-      clientSocket.disconnect();
+    clientSocket.on('disconnect', async () => {
       const manager = clientApiMap.get(clientSocket.botId);
       manager?.clearForDisconnectState();
+      await sendUpdateEvent(manager, updateEvents.state.clear, { state: 'disconnected' });
+      clientSocket.disconnect();
       if (clientSocket.botId) { clientApiMap.delete(clientSocket.botId); }
     });
   } catch (error) {

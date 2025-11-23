@@ -7,6 +7,8 @@ import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 import { getChannelList } from './getUsersIDs.js';
 import { updateEvents } from '../constants/updateEvents.js';
 import { updateTimers } from '../../helpers/updateTimers.js';
+import { checkBotStep } from '../steps/checkBotStep.js';
+import handleBotStepReplay from '../steps/handleBotStepReplay.js';
 
 /**
  * Handles the room bot setup command.
@@ -26,6 +28,14 @@ export const handleRoomCommand = async (token, botManager) => {
     // If main bot is not connected, reset state and exit
     if (!mainBot || !mainBot.connected) {
       console.log('🚀 ~ mainBot state:', !mainBot || !mainBot.connected);
+      return;
+    }
+    if (checkBotStep(botManager, 'room')) {
+      await handleBotStepReplay(botManager);
+      return;
+    }
+    if (!checkBotStep(botManager, 'main')) {
+      await handleBotStepReplay(botManager);
       return;
     }
     // Validate the provided token format

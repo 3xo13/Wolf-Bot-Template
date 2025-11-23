@@ -11,6 +11,7 @@ import { handleAdAccountCommand } from './adBot/handleAdAccountCommand.js';
 import { handleMessageCountCommand } from './adBot/handleMessageCountCommand.js';
 import handleShowMessagesCommand from './handleShowMessagesCommand.js';
 import handleMessagesChangeCommand from './handleMessagesChangeCommand.js';
+import handleHelpCommand from '../handleHelpCommand.js';
 
 export const handleAdBotCommand = async (command, args) => {
   const { clientSocket, botManager } = args;
@@ -35,10 +36,6 @@ export const handleAdBotCommand = async (command, args) => {
         await handleMessageCountCommand(commandName, botManager);
         return;
 
-        // Removed explicit "رساله اعلان" command: after selecting message count and style,
-        // the next incoming text messages are handled by the default flow (handleDefaultCommand)
-        // and will be stored according to the configured message count and style.
-
       case 'تشغيل':
         await handleAdRunCommand(botManager);
         return;
@@ -47,7 +44,7 @@ export const handleAdBotCommand = async (command, args) => {
         await handleStopCommand(botManager);
         return;
 
-      case 'اعاده تعيين':
+      case 'اعاده تعيين البوت':
         await handleReset(botManager);
         return;
 
@@ -55,12 +52,16 @@ export const handleAdBotCommand = async (command, args) => {
         await handleStateReport(botManager);
         return;
 
-      case 'عرض الرسائل':
+      case 'عرض رساله اعلان':
         await handleShowMessagesCommand(botManager);
         return;
 
-      case 'تغيير الرسائل':
+      case 'تغيير رساله اعلان':
         await handleMessagesChangeCommand(botManager);
+        return;
+
+      case 'مساعده':
+        await handleHelpCommand(botManager);
         return;
 
       default:

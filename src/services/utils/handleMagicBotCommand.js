@@ -1,6 +1,5 @@
 import { handleReset } from './handleReset.js';
 import { checkBotStep } from './steps/checkBotStep.js';
-import { userMessages } from './constants/userMessages.js';
 import { handleStateReport } from './handleStateReport.js';
 import { handleStopCommand } from './adBot/handleStopCommand.js';
 import { handleDefaultCommand } from './handleDefaultCommand.js';
@@ -12,6 +11,8 @@ import { handleMessageCountCommand } from './adBot/handleMessageCountCommand.js'
 import { handleMagicBotDefaultCommand } from './roomBot/magic/handleMagicBotDefaultCommand.js';
 import handleMessagesChangeCommand from './handleMessagesChangeCommand.js';
 import handleShowMessagesCommand from './handleShowMessagesCommand.js';
+import handleBotStepReplay from './steps/handleBotStepReplay.js';
+import handleHelpCommand from '../handleHelpCommand.js';
 
 export const handleMagicBotCommand = async (command, args) => {
   const { clientSocket, botManager } = args;
@@ -42,7 +43,7 @@ export const handleMagicBotCommand = async (command, args) => {
         await handleStopCommand(botManager);
         return;
 
-      case 'اعاده تعيين':
+      case 'اعاده تعيين البوت':
         await handleReset(botManager);
         return;
 
@@ -50,12 +51,16 @@ export const handleMagicBotCommand = async (command, args) => {
         await handleStateReport(botManager);
         return;
 
-      case 'تغيير الرسائل':
+      case 'تغيير رساله اعلان':
         await handleMessagesChangeCommand(botManager);
         return;
 
-      case 'عرض الرسائل':
+      case 'عرض رساله اعلان':
         await handleShowMessagesCommand(botManager);
+        return;
+
+      case 'مساعده':
+        await handleHelpCommand(botManager);
         return;
 
       default:
@@ -64,11 +69,7 @@ export const handleMagicBotCommand = async (command, args) => {
         } else if (checkBotStep(botManager, 'adStyle') || checkBotStep(botManager, 'message')) {
           await handleDefaultCommand(botManager, command);
         } else {
-          await sendPrivateMessage(
-            botManager.config.baseConfig.orderFrom,
-            userMessages.invalidCommand,
-            mainBot, mainBot
-          );
+          await handleBotStepReplay(botManager);
         }
 
         break;

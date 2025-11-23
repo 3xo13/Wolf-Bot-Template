@@ -3,7 +3,7 @@ export const adBotSteps = {
   main: {
     name: 'الخطوة الرئيسية',
     stepNumber: 1,
-    description: 'البوت الرئيسي متصل',
+    description: 'البوت متصل',
     nextStepMessage: 'أرسل أمر "حساب رومات\nAAAAAAA" للمتابعة',
     done: false
   },
@@ -57,7 +57,7 @@ export const adBotSteps = {
     name: 'تم إرسال الإعلانات',
     stepNumber: 8,
     description: 'تم إرسال الإعلانات بنجاح',
-    nextStepMessage: 'أرسل أمر "إنهاء" للمتابعة',
+    // nextStepMessage: 'أرسل أمر "إنهاء" للمتابعة',
     done: false
   }
 };

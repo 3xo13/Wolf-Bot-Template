@@ -3,7 +3,7 @@ export const magicBotSteps = {
   main: {
     name: 'الخطوة الرئيسية',
     stepNumber: 1,
-    description: 'البوت الرئيسي متصل',
+    description: 'البوت متصل',
     nextStepMessage: 'أرسل أمر "حساب رومات\nAAAAAAA" للمتابعة',
     done: false
   },

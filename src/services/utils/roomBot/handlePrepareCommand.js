@@ -9,6 +9,7 @@ import setStepState from '../steps/setStepState.js';
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 import { extractChannelMembers } from './getUsersIDs.js';
 import { checkBotStep } from '../steps/checkBotStep.js';
+import handleBotStepReplay from '../steps/handleBotStepReplay.js';
 
 /**
  * Prepares room bots by connecting them to channels and extracting members.
@@ -22,7 +23,8 @@ export const handlePrepareCommand = async (botManager) => {
     const roomBot = botManager.getRoomBots()[0];
 
     if (!checkBotStep(botManager, 'room') || !botManager.getRoomBots().length) {
-      throw new Error('خطوة غير صحيحة\nالرجاء ادخال بوت الروومات أولا');
+      await handleBotStepReplay(botManager);
+      return;
     }
 
     // Check if room bot is connected and authenticated

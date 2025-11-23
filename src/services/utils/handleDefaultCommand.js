@@ -7,6 +7,7 @@ import { userMessages } from './constants/userMessages.js';
 // Function to send a private message to a user
 import { sendPrivateMessage } from './messaging/sendPrivateMessage.js';
 import { checkBotStep } from './steps/checkBotStep.js';
+import handleBotStepReplay from './steps/handleBotStepReplay.js';
 import setStepState from './steps/setStepState.js';
 // Function to send an update event to the client
 import { sendUpdateEvent } from './updates/sendUpdateEvent.js';
@@ -77,7 +78,7 @@ export const handleDefaultCommand = async (botManager, command) => {
         await sendUpdateEvent(botManager, updateEvents.message.setup, { message: command.body, index: 1 });
         return;
       } else {
-        throw new Error('عدد الرسائل غير صحيح');
+        throw new Error('نمط الرسائل غير صحيح');
       }
     }
 
@@ -112,11 +113,8 @@ export const handleDefaultCommand = async (botManager, command) => {
         }
       } else {
         // If too many messages or invalid command, notify the user
-        await sendPrivateMessage(
-          botManager.config.baseConfig.orderFrom,
-          userMessages.invalidCommand,
-          mainBot, mainBot
-        );
+        await handleBotStepReplay(botManager);
+        return;
       }
     }
   } catch (error) {

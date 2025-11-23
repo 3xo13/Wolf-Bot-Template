@@ -8,6 +8,7 @@ import { updateEvents } from '../constants/updateEvents.js';
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 import { checkBotStep } from '../steps/checkBotStep.js';
 import { updateTimers } from '../../helpers/updateTimers.js';
+import handleBotStepReplay from '../steps/handleBotStepReplay.js';
 
 export const handleAdAccountCommand = async (botManager, data) => {
   botManager.setIsBusy(true);
@@ -18,7 +19,8 @@ export const handleAdAccountCommand = async (botManager, data) => {
     const step = botManager.getBotType() === 'ad' ? 'members' : 'room';
 
     if (!checkBotStep(botManager, step)) {
-      throw new Error('خطوة غير صحيحة\nالرجاء ادخال بوت الروومات أولا');
+      await handleBotStepReplay(botManager);
+      return;
     }
     // Check if there are users to send ads to
     if (botType === 'ad' && !botManager.getUsers().length) {

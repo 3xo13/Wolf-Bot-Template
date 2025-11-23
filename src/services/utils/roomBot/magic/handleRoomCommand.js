@@ -8,6 +8,8 @@ import { updateEvents } from '../../constants/updateEvents.js';
 import { magicBotSteps } from '../../constants/magicBotSteps.js';
 import { userMessages } from '../../constants/userMessages.js';
 import { updateTimers } from '../../../helpers/updateTimers.js';
+import { checkBotStep } from '../../steps/checkBotStep.js';
+import handleBotStepReplay from '../../steps/handleBotStepReplay.js';
 
 /**
  * Handles the room bot setup command.
@@ -28,6 +30,10 @@ export const handleRoomCommand = async (token, botManager) => {
     if (!mainBot || !mainBot.connected) {
       console.log('🚀 ~ mainBot state:', !mainBot || !mainBot.connected);
       setStepState(botManager, '', '');
+      return;
+    }
+    if (checkBotStep(botManager, 'room') || !checkBotStep(botManager, 'main')) {
+      await handleBotStepReplay(botManager);
       return;
     }
     // Validate the provided token format

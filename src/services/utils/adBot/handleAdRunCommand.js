@@ -5,6 +5,7 @@ import { updateEvents } from '../constants/updateEvents.js';
 // Function to send a private message to a user
 import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js';
 import { checkBotStep } from '../steps/checkBotStep.js';
+import handleBotStepReplay from '../steps/handleBotStepReplay.js';
 // Function to update the workflow step state
 import setStepState from '../steps/setStepState.js';
 // Function to send an update event to the client
@@ -27,7 +28,8 @@ export const handleAdRunCommand = async (botManager) => {
     const messagesLength = botManager.getMessages().length;
     const messagesCount = botManager.getMessageCount();
     if (!checkBotStep(botManager, 'message') || messagesCount !== messagesLength) {
-      throw new Error('خطوة غير صحيحة\nالرجاء ادخال الرسائل أولا');
+      await handleBotStepReplay(botManager);
+      return;
     }
 
     // Validate that there are users to send ads to
@@ -56,13 +58,17 @@ export const handleAdRunCommand = async (botManager) => {
       return;
     }
     // Update workflow step to indicate ads have been sent
-    setStepState(botManager, 'adsSent');
+    setStepState(botManager, 'main');
     // Notify client about completion of ad sending
     await sendUpdateEvent(botManager, updateEvents.ad.done, { ads: botManager.getMessages().length });
     // Send a private message to the user with next step instructions
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
-      `${adBotSteps.adsSent.description}\n${adBotSteps.adsSent.nextStepMessage}`,
+      `${adBotSteps.adsSent.description}\n
+      إجمالي الأعضاء:
+      ${botManager.getUsers().length}
+      عدد الإعلانات:
+      ${botManager.getMessagesDeliveredTo().length}`,
       mainBot, mainBot
     );
   } catch (error) {

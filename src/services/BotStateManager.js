@@ -20,7 +20,7 @@ class BotStateManager {
     this.lastUserIndex = 0;
     this.channels = new Map(); // Map of channelId -> channel info
     this.socket = null; // Socket connection instance
-    this.currentStep = null; // Current step in the process
+    this.currentStep = 1; // Current step in the process
     this.messages = new Set(); // Message texts for display
     this.messageCount = 0;
     this.channelUsers = new Map();
@@ -207,7 +207,7 @@ class BotStateManager {
     this.messagesDeliverdeTo.clear();
     this.clearRoomBots();
     this.clearAdBots();
-    this.currentStep = null;
+    this.currentStep = 1;
     this.users.clear();
     this.lastUserIndex = 0;
     this.channels.clear();
@@ -220,22 +220,22 @@ class BotStateManager {
 
   resetState () {
     // Stop any scheduled reconnects
-    try { this.stopMainBotReconnectScheduler(); } catch (e) { }
+    // try { this.stopMainBotReconnectScheduler(); } catch (e) { }
     try { this.stopRoomBotsReconnectScheduler(); } catch (e) { }
     try { this.stopAdBotsReconnectScheduler(); } catch (e) { }
 
     // Clear scheduler trigger timestamps if present
-    try { this.mainBotSchedulerTriggerAt = null; } catch (e) { }
+    // try { this.mainBotSchedulerTriggerAt = null; } catch (e) { }
     try { this.roomBotsSchedulerTriggerAt = null; } catch (e) { }
     try { this.adBotsSchedulerTriggerAt = null; } catch (e) { }
 
     // Clear any raw scheduler refs
-    try { if (this._mainBotSchedulerRef) { clearTimeout(this._mainBotSchedulerRef); this._mainBotSchedulerRef = null; } } catch (e) { }
+    // try { if (this._mainBotSchedulerRef) { clearTimeout(this._mainBotSchedulerRef); this._mainBotSchedulerRef = null; } } catch (e) { }
     try { if (this._roomBotsSchedulerRef) { clearTimeout(this._roomBotsSchedulerRef); this._roomBotsSchedulerRef = null; } } catch (e) { }
     try { if (this._adBotsSchedulerRef) { clearTimeout(this._adBotsSchedulerRef); this._adBotsSchedulerRef = null; } } catch (e) { }
 
     // Disconnect and remove bot instances
-    try { if (this.mainBot && typeof this.mainBot.disconnect === 'function') { this.mainBot.disconnect(); } } catch (e) { }
+    // try { if (this.mainBot && typeof this.mainBot.disconnect === 'function') { this.mainBot.disconnect(); } } catch (e) { }
     try { this.roomBots.forEach(bot => { try { if (bot && typeof bot.disconnect === 'function') { bot.disconnect(); } } catch (e) { } }); } catch (e) { }
     try { this.adBots.forEach(bot => { try { if (bot && typeof bot.disconnect === 'function') { bot.disconnect(); } } catch (e) { } }); } catch (e) { }
 
@@ -247,9 +247,10 @@ class BotStateManager {
     try { this.messagesDeliverdeTo.clear(); } catch (e) { }
 
     // Null out references to help GC
-    try { this.socket = null; } catch (e) { }
-    try { this.config = null; } catch (e) { }
-    this.mainBot = null;
+    // try { this.socket = null; } catch (e) { }
+    // try { this.config = null; } catch (e) { }
+    // this.mainBot = null;
+    this.currentStep = 1;
     this.roomBots = [];
     this.adBots = [];
     this.adBotsQueue = [];
