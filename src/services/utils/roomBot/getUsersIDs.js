@@ -1,6 +1,6 @@
 import { getAllChannelMembers } from './getAllChannelMembers.js';
 
-export async function getChannelList(roomBot) {
+export async function getChannelList (roomBot) {
   if (!roomBot.connected) {
     throw new Error('Not connected');
   }
@@ -15,6 +15,8 @@ export const extractChannelMembers = async (roomBot, botManager, channelId) => {
       throw new Error('بوت الغرفة غير متصل');
     }
 
+    console.log(`🔄 Starting extraction for channel ${channelId}...`);
+
     try {
       const allMembers = await getAllChannelMembers(
         roomBot,
@@ -27,19 +29,23 @@ export const extractChannelMembers = async (roomBot, botManager, channelId) => {
         allMembers.allMembers.forEach((member) => {
           botManager.addUser(member.id.toString());
         });
-        console.log(`✅ Added ${allMembers.allMembers.length} users from channel ${channelId}`);
+        console.log(`✅ Channel ${channelId}: Extracted ${allMembers.allMembers.length} members`);
+        console.log(`   - Privileged: ${allMembers.summary.privileged}`);
+        console.log(`   - Regular: ${allMembers.summary.regular}`);
+        console.log(`   - Silenced: ${allMembers.summary.silenced}`);
+        console.log(`   - Banned: ${allMembers.summary.banned}`);
+        console.log(`   - Bots: ${allMembers.summary.bots}`);
+      } else {
+        console.log(`⚠️ Channel ${channelId}: No members found or empty result`);
       }
     } catch (error) {
-      console.log('🚀 ~ extractChannelMembers ~ error:', error);
-      console.log(
-        `Failed to get members from channel ${channelId}:`,
-        error
-      );
+      console.log(`❌ Channel ${channelId}: Failed to extract members -`, error.message);
+      throw error;
     }
 
     return true;
   } catch (error) {
-    console.log('Error in extractAllMembers:', error);
+    console.log(`❌ Error in extractChannelMembers for channel ${channelId}:`, error.message);
     throw error;
   }
 };

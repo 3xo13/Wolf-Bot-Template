@@ -1,6 +1,6 @@
 import { getChannelMembers } from './getChannelMembers.js';
 // to
-export async function getAllChannelMembers(
+export async function getAllChannelMembers (
   roomBot,
   channelId,
   limit = 100
@@ -29,13 +29,18 @@ export async function getAllChannelMembers(
     for (const type of memberTypes) {
       try {
         const response = await getChannelMembers(roomBot, channelId, type, limit);
-        const memberIds = Array.isArray(response.body) ? response.body : [];
-        membersByType[type] = memberIds;
+        const members = Array.isArray(response.body) ? response.body : [];
+        membersByType[type] = members;
 
-        // Add IDs to unique set
-        if (memberIds.length > 0) {
-          memberIds.forEach((id) => {
-            uniqueMembers.set(id, { id, memberType: type });
+        // Add to unique members map to avoid duplicates
+        if (Array.isArray(members)) {
+          members.forEach((member) => {
+            if (member && member.id) {
+              uniqueMembers.set(member.id, {
+                ...member,
+                memberType: type
+              });
+            }
           });
         }
       } catch (error) {

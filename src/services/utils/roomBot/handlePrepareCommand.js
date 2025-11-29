@@ -61,8 +61,15 @@ export const handlePrepareCommand = async (botManager) => {
     }));
 
     // Extract members from each channel using its room bot
-    const result = await Promise.all(channelBotPairs.map(([channelId, bot]) => {
-      return extractChannelMembers(bot, botManager, channelId);
+    const result = await Promise.all(channelBotPairs.map(async ([channelId, bot]) => {
+      try {
+        const extractResult = await extractChannelMembers(bot, botManager, channelId);
+        console.log(`✅ Successfully extracted members from channel ${channelId}`);
+        return extractResult;
+      } catch (error) {
+        console.log(`❌ Failed to extract members from channel ${channelId}:`, error.message);
+        return false;
+      }
     }));
 
     // If extraction succeeded, update state and notify user

@@ -3,47 +3,135 @@ export async function getChannelMembers(roomBot, channelId, listType = 'regular'
     throw new Error('Not connected');
   }
 
-  const validListTypes = ['privileged', 'regular', 'silenced', 'banned', 'bots'];
+  const listConfig = {
+    privileged: {
+      command: 'group member privileged list',
+      key: 'id',
+      version: 3
+    },
+    regular: {
+      command: 'group member regular list',
+      key: 'id',
+      version: 1
+    },
+    silenced: {
+      command: 'group member search',
+      key: 'groupId',
+      version: 1
+    },
+    banned: {
+      command: 'group member banned list',
+      key: 'id',
+      version: 1
+    },
+    bots: {
+      command: 'group member search',
+      key: 'groupId',
+      version: 1
+    }
+  };
 
-  if (!validListTypes.includes(listType)) {
+  const config = listConfig[listType];
+  if (!config) {
     throw new Error(
-      `Invalid list type: ${listType}. Valid types: ${validListTypes.join(', ')}`
+      `Invalid list type: ${listType}. Valid types: ${Object.keys(listConfig).join(', ')}`
     );
   }
 
-  try {
-    // Use official WOLF API to get channel members (populates the channel's internal Map)
-    await roomBot.channel.member.getList(parseInt(channelId), listType);
+  // For regular member list, implement pagination to fetch all members
+  if (listType === 'regular') {
+    const allMembers = [];
+    let after = null;
+    const pageSize = 100; // Maximum allowed by the API
+    let totalFetched = 0;
+    const maxIterations = Math.ceil(limit / pageSize) + 1; // Safety limit to prevent infinite loops
+    let iterations = 0;
 
-    // Get the channel to access its members Map directly
-    const channel = await roomBot.channel.getById(parseInt(channelId));
+    while (totalFetched < limit && iterations < maxIterations) {
+      iterations++;
+      const remainingLimit = Math.min(pageSize, limit - totalFetched);
 
-    // Extract IDs directly from the channel's members Map
-    const memberIds = [];
-    if (channel.members?._members) {
-      for (const [id, member] of channel.members._members) {
-        if (member.lists.has(listType)) {
-          memberIds.push(id);
+      const body = {
+        [config.key]: parseInt(channelId.toString()),
+        limit: remainingLimit
+      };
+
+      // Add 'after' parameter for pagination if we have it
+      if (after !== null) {
+        body.after = after;
+      }
+
+      try {
+        const response = await roomBot.websocket.emit(config.command, {
+          headers: {
+            version: config.version
+          },
+          body
+        });
+
+        // Extract members from response
+        const members = Array.isArray(response.body)
+          ? response.body
+          : [];
+
+        if (members.length === 0) {
+          // No more members to fetch
+          break;
         }
+
+        allMembers.push(...members);
+        totalFetched += members.length;
+
+        // Set 'after' to the last member's ID for next iteration
+        const lastMember = members[members.length - 1];
+        if (lastMember && typeof lastMember.id === 'number' && lastMember.id > 0) {
+          after = lastMember.id;
+        } else {
+          // No valid ID found, break to avoid infinite loop
+          console.warn('No valid member ID found for pagination, stopping fetch');
+          break;
+        }
+
+        // If we got fewer members than requested, we've reached the end
+        if (members.length < remainingLimit) {
+          break;
+        }
+      } catch (error) {
+        console.error(`Error fetching regular members page ${iterations}:`, error);
+        throw error;
       }
     }
 
-    // Return array of IDs
+    // Return response with all accumulated members
     return {
       success: true,
       code: 200,
-      body: memberIds,
-      totalMembers: memberIds.length
-    };
-  } catch (error) {
-    // Return empty array for any error (404, undefined response.body, etc.)
-    // This is expected for member types that don't exist (e.g., no banned members)
-    console.log(`No ${listType} members found for channel ${channelId} (${error.message})`);
-    return {
-      success: true,
-      code: 200,
-      body: [],
-      totalMembers: 0
+      body: allMembers,
+      totalMembers: allMembers.length,
+      paginationInfo: {
+        totalFetched,
+        iterations,
+        lastAfter: after
+      }
     };
   }
+
+  // For other list types, use the original implementation
+  const body = {
+    [config.key]: parseInt(channelId.toString()),
+    limit
+  };
+
+  // Add filter for search-based commands
+  if (listType === 'silenced' || listType === 'bots') {
+    body.filter = listType;
+    body.offset = 0;
+  }
+
+  return roomBot.websocket.emit(config.command, {
+    headers: {
+      version: config.version
+    },
+    body
+  });
 }

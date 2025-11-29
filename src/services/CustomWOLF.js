@@ -35,20 +35,22 @@ class CustomWOLF extends WOLF {
 
   /**
    * Create a proxy agent based on configuration
-   * @returns {HttpsProxyAgent|SocksProxyAgent|undefined}
+   * @param {Object} config - Configuration object (if not provided, uses stored config)
+   * @returns {HttpsProxyAgent|SocksProxyAgent|null}
    */
-  createProxyAgent () {
-    const proxyConfig = this._loginConfig?.proxy || this.config?.proxy;
+  async createProxyAgent (config) {
+    // Use provided config, or fall back to stored config
+    const proxyConfig = config?.proxy || this._loginConfig?.proxy || this.config?.proxy;
 
     if (!proxyConfig || !proxyConfig.enabled) {
-      return undefined;
+      return null;
     }
 
     const { protocol, host, port, username, password } = proxyConfig;
 
     if (!host || !port) {
       console.warn('Proxy enabled but host or port missing');
-      return undefined;
+      return null;
     }
 
     try {
@@ -60,6 +62,8 @@ class CustomWOLF extends WOLF {
 
       proxyUrl += `${host}:${port}`;
 
+      console.log(`🔧 Creating proxy agent: ${protocol}://${host}:${port}`);
+
       if (protocol === 'socks5' || protocol === 'socks') {
         return new SocksProxyAgent(proxyUrl);
       } else {
@@ -67,7 +71,7 @@ class CustomWOLF extends WOLF {
       }
     } catch (error) {
       console.error('Failed to create proxy agent:', error);
-      return undefined;
+      return null;
     }
   }
 
