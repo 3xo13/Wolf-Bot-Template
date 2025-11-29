@@ -49,7 +49,7 @@ export const handleRoomCommand = async (token, botManager) => {
     const newRoomBot = await botManager.connect('room');
 
     updateTimers(botManager, 'room');
-    botManager.startRoomBotsReconnectScheduler();
+    // botManager.startRoomBotsReconnectScheduler();
     // Retrieve the list of channels for the room bot
     const channels = await getChannelList(newRoomBot);
     // Extract channel IDs from the channel list (channels is already an array from WOLF API)

@@ -19,9 +19,9 @@ export async function connectFn (manager, botType) {
       });
 
       // Start the manager-owned reconnect scheduler for the main bot
-      try {
-        if (typeof manager.startMainBotReconnectScheduler === 'function') { manager.startMainBotReconnectScheduler(); }
-      } catch (_e) { }
+      // try {
+      //   if (typeof manager.startMainBotReconnectScheduler === 'function') { manager.startMainBotReconnectScheduler(); }
+      // } catch (_e) { }
       break;
     case 'room': {
       botInstance = new CustomWOLF(manager, 'room');

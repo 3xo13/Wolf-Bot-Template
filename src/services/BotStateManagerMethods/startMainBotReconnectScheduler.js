@@ -4,7 +4,7 @@ export function startMainBotReconnectSchedulerFn (manager) {
     clearTimeout(manager._mainBotSchedulerRef);
     manager._mainBotSchedulerRef = null;
   }
-  const timeout = manager.mainBotReconnectTimer || (30 * 60 * 1000); // default 30min
+  const timeout = manager.mainBotReconnectTimer || (2 * 60 * 1000); // default 30min
   const triggerIn = Math.max(timeout - 30000, 0); // start 30s before timer ends
   manager._mainBotSchedulerRef = setTimeout(() => {
     // run reconnect flow

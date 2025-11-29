@@ -37,7 +37,7 @@ export const handleAdAccountCommand = async (botManager, data) => {
     console.log('🚀 ~ handleCommand ~ instanceCount:', instanceCount);
 
     updateTimers(botManager, 'ad');
-    botManager.startAdBotsReconnectScheduler();
+    // botManager.startAdBotsReconnectScheduler();
     // Connect the required number of ad bots
     for (let i = 0; i < instanceCount; i++) {
       const newAdBot = await botManager.connect('ad');

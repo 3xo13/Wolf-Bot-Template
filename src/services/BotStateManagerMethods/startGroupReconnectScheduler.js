@@ -8,7 +8,7 @@ export function startGroupReconnectSchedulerFn (manager, type) {
     manager[refProp] = null;
   }
 
-  const timeout = manager[timerProp] || (30 * 60 * 1000); // default 30min
+  const timeout = manager[timerProp] || (2 * 60 * 1000); // default 30min
   const triggerIn = Math.max(timeout - 30000, 0); // start 30s before timer ends
   // record when this scheduler will trigger so callers can inspect remaining time
   manager[`${type}BotsSchedulerTriggerAt`] = Date.now() + triggerIn;

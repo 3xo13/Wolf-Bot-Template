@@ -13,7 +13,7 @@ export async function runGroupReconnectFn (manager, type) {
   // Wait until all bots are not working. While waiting, mark any bot that is currently not working as busy
   // to preserve it from being assigned new work. Poll every 5 seconds.
   // Also update the manager's group timer every second (in milliseconds).
-  const defaultMs = 30 * 60 * 1000; // 30 minutes
+  const defaultMs = 2 * 60 * 1000; // 30 minutes
   const initial = (type === 'room') ? manager.roomBotsReconnectTimer : manager.adBotsReconnectTimer;
   let remainingMs = (typeof initial === 'number') ? (initial < 1000 ? initial * 1000 : initial) : defaultMs;
   let updater = null;

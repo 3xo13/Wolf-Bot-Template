@@ -8,7 +8,7 @@ export async function runMainBotReconnectFn (manager) {
   }
 
   // normalize timer to milliseconds (if the manager stores seconds, convert)
-  const defaultMs = 30 * 60 * 1000; // 30 minutes
+  const defaultMs = 2 * 60 * 1000; // 30 minutes
   const initial = manager.mainBotReconnectTimer;
   let remainingMs = (typeof initial === 'number')
     ? (initial < 1000

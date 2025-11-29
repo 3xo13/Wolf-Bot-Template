@@ -1,4 +1,4 @@
-/* eslint-disable no-tabs */
+
 import { WOLF } from 'wolf.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
@@ -20,23 +20,23 @@ class CustomWOLF extends WOLF {
   }
 
   /**
-	 * Set the busy state of the bot
-	 */
+   * Set the busy state of the bot
+   */
   setIsBusy (isBusy) {
     this.isBusy = isBusy;
   }
 
   /**
-	 * Set the working state of the bot
-	 */
+   * Set the working state of the bot
+   */
   setIsWorking (isWorking) {
     this.isWorking = isWorking;
   }
 
   /**
-	 * Create a proxy agent based on configuration
-	 * @returns {HttpsProxyAgent|SocksProxyAgent|undefined}
-	 */
+   * Create a proxy agent based on configuration
+   * @returns {HttpsProxyAgent|SocksProxyAgent|undefined}
+   */
   createProxyAgent () {
     const proxyConfig = this._loginConfig?.proxy || this.config?.proxy;
 
@@ -72,14 +72,17 @@ class CustomWOLF extends WOLF {
   }
 
   /**
-	 * Override login to handle connection state
-	 */
+   * Override login to handle connection state
+   */
   async login (config) {
     // Return a promise that waits for the actual connection
     return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(async () => {
         cleanup();
         this.connected = false;
+        if (this.botType === 'main') {
+          await sendUpdateEvent(this.botManager, updateEvents.bots.main.disconnected, { state: 'disconnected' });
+        }
         reject(new Error('Connection timeout after 15 seconds'));
       }, 15000);
 
@@ -180,7 +183,7 @@ class CustomWOLF extends WOLF {
       this.once('connectError', handleError);
 
       // Call parent login which sets up websocket and connects
-      super.login(config).catch((error) => {
+      super.login(config).catch(async (error) => {
         clearTimeout(timeoutId);
         cleanup();
         this.connected = false;
@@ -190,8 +193,8 @@ class CustomWOLF extends WOLF {
   }
 
   /**
-	 * Override disconnect to update connection state and notify UI
-	 */
+   * Override disconnect to update connection state and notify UI
+   */
   async disconnect () {
     try {
       console.log(`🔌 Disconnecting bot: { botType: '${this.botType}', subscriberId: ${this.currentSubscriber?.id}, nickname: '${this.currentSubscriber?.nickname}' }`);
@@ -223,11 +226,11 @@ class CustomWOLF extends WOLF {
   }
 
   /**
-	 * Setup message routing for ad or magic bot type
-	 * @param {Object} handlers - Object with handlers for different bot types
-	 * @param {Function} handlers.ad - Handler for ad bot type
-	 * @param {Function} handlers.magic - Handler for magic bot type
-	 */
+   * Setup message routing for ad or magic bot type
+   * @param {Object} handlers - Object with handlers for different bot types
+   * @param {Function} handlers.ad - Handler for ad bot type
+   * @param {Function} handlers.magic - Handler for magic bot type
+   */
   setupMessageRouting (handlers) {
     if (this.botType !== 'main') {
       return; // Only main bot handles message routing
