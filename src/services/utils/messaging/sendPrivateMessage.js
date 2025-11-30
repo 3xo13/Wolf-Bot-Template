@@ -5,7 +5,7 @@ import waitUntilAllBotsIdle from '../../helpers/waitForBotsIdle.js';
  * @param {String} url - URL to check
  * @returns {Number|null} Group ID or null
  */
-function extractWolfGroupId(url) {
+function extractWolfGroupId (url) {
   // Match patterns like:
   // https://app.wolf.live/12345 (direct ID)
   // https://app.wolf.live/g/12345 (with /g/ prefix)
@@ -13,9 +13,9 @@ function extractWolfGroupId(url) {
   // https://wolf.live/g/12345
   // wolf://g/12345
   const patterns = [
-    /(?:https?:\/\/)?(?:app\.)?wolf\.live\/g\/(\d+)/i,  // with /g/
-    /(?:https?:\/\/)?(?:app\.)?wolf\.live\/(\d+)/i,     // direct ID
-    /wolf:\/\/g\/(\d+)/i                                  // wolf:// protocol
+    /(?:https?:\/\/)?(?:app\.)?wolf\.live\/g\/(\d+)/i, // with /g/
+    /(?:https?:\/\/)?(?:app\.)?wolf\.live\/(\d+)/i, // direct ID
+    /wolf:\/\/g\/(\d+)/i // wolf:// protocol
   ];
 
   for (const pattern of patterns) {
@@ -32,7 +32,7 @@ function extractWolfGroupId(url) {
  * @param {String} message - Message text containing links
  * @returns {Array} Array of link objects with groupId for GROUP_PREVIEW embeds
  */
-function findWolfGroupLinks(message) {
+function findWolfGroupLinks (message) {
   const links = [];
 
   // Find all WOLF group URLs in the message
@@ -51,8 +51,8 @@ function findWolfGroupLinks(message) {
       links.push({
         start: match.index,
         end: match.index + url.length,
-        url: url,
-        groupId: groupId  // This tells WOLF API to create GROUP_PREVIEW embed
+        url,
+        groupId // This tells WOLF API to create GROUP_PREVIEW embed
       });
     }
   }
@@ -69,9 +69,7 @@ function findWolfGroupLinks(message) {
  * @param {Object} adBotClient - Alternative client to use (optional)
  * @returns {Promise<Response>} WOLF API response
  */
-export async function sendPrivateMessage(subscriberId, message, client, mainBot, adBotClient) {
-  console.log('🚀 ~ sendPrivateMessage ~ subscriberId:', subscriberId);
-
+export async function sendPrivateMessage (subscriberId, message, client, mainBot, adBotClient) {
   if (!subscriberId || !message) {
     throw new Error('subscriberId and message are required');
   }
@@ -94,7 +92,7 @@ export async function sendPrivateMessage(subscriberId, message, client, mainBot,
 
     const options = {
       formatting: {
-        includeEmbeds: true,  // Enable link previews and embeds
+        includeEmbeds: true, // Enable link previews and embeds
         renderAds: true,
         renderLinks: true,
         success: false,

@@ -38,10 +38,10 @@ const clientApiMap = new Map();
 
 io.on('connection', async (clientSocket) => {
   try {
-    console.log('Client connected:', clientSocket.id);
+    // console.log('Client connected:', clientSocket.id);
 
     clientSocket.on('init-api', async (request) => {
-      console.log('🚀 ~ request:', request);
+      // console.log('🚀 ~ request:', request);
       const config = {
         ...request,
         mainBotConfig: {

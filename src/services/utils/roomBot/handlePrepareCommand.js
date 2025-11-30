@@ -64,7 +64,6 @@ export const handlePrepareCommand = async (botManager) => {
     const result = await Promise.all(channelBotPairs.map(async ([channelId, bot]) => {
       try {
         const extractResult = await extractChannelMembers(bot, botManager, channelId);
-        console.log(`✅ Successfully extracted members from channel ${channelId}`);
         return extractResult;
       } catch (error) {
         console.log(`❌ Failed to extract members from channel ${channelId}:`, error.message);
@@ -75,7 +74,7 @@ export const handlePrepareCommand = async (botManager) => {
     // If extraction succeeded, update state and notify user
     if (result) {
       setStepState(botManager, 'members');
-      console.log('members list: ', botManager.getUsers().length);
+      console.log('✅ Total users extracted:', botManager.getUsers().length);
       // Disconnect all room bots after extraction
       await botManager.clearChannels();
       await botManager.clearRoomBots();

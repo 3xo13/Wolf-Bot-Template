@@ -98,10 +98,16 @@ class CustomWOLF extends WOLF {
         resolve(data);
       };
 
-      const handleError = (error) => {
+      const handleError = async (error) => {
         clearTimeout(timeoutId);
         this.connected = false;
         cleanup();
+
+        // Send disconnect event for main bot on any connection error
+        if (this.botType === 'main') {
+          await sendUpdateEvent(this.botManager, updateEvents.bots.main.disconnected, { state: 'disconnected' });
+        }
+
         reject(error instanceof Error ? error : new Error(String(error)));
       };
 
@@ -191,6 +197,12 @@ class CustomWOLF extends WOLF {
         clearTimeout(timeoutId);
         cleanup();
         this.connected = false;
+
+        // Send disconnect event for main bot on any login error
+        if (this.botType === 'main') {
+          await sendUpdateEvent(this.botManager, updateEvents.bots.main.disconnected, { state: 'disconnected' });
+        }
+
         reject(error);
       });
     });

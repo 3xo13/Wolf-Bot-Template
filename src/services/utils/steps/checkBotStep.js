@@ -2,7 +2,6 @@ import { adBotSteps } from '../constants/adBotSteps.js';
 import { magicBotSteps } from '../constants/magicBotSteps.js';
 
 export const checkBotStep = (botManager, stepName) => {
-  console.log('🚀 ~ checkBotStep ~ stepName:', stepName);
   if (!botManager || !stepName) {
     throw new Error('Missing parameters');
   }

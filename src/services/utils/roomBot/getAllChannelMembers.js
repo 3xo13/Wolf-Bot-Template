@@ -1,6 +1,6 @@
 import { getChannelMembers } from './getChannelMembers.js';
 // to
-export async function getAllChannelMembers (
+export async function getAllChannelMembers(
   roomBot,
   channelId,
   limit = 100
@@ -51,8 +51,6 @@ export async function getAllChannelMembers (
 
     const uniqueMembersList = Array.from(uniqueMembers.values());
     const totalCount = uniqueMembersList.length;
-
-    console.log(`🎯 Channel ${channelId}: ${totalCount} unique members`);
 
     return {
       channelId: parseInt(channelId.toString()),
