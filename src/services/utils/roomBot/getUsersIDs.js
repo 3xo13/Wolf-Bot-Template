@@ -1,6 +1,6 @@
 import { getAllChannelMembers } from './getAllChannelMembers.js';
 
-export async function getChannelList(roomBot) {
+export async function getChannelList (roomBot) {
   if (!roomBot.connected) {
     throw new Error('Not connected');
   }

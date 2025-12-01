@@ -1,6 +1,6 @@
 import { getChannelMembers } from './getChannelMembers.js';
 // to
-export async function getAllChannelMembers(
+export async function getAllChannelMembers (
   roomBot,
   channelId,
   limit = 100
@@ -26,10 +26,17 @@ export async function getAllChannelMembers(
   const uniqueMembers = new Map();
 
   try {
-    for (const type of memberTypes) {
-      try {
-        const response = await getChannelMembers(roomBot, channelId, type, limit);
-        const members = Array.isArray(response.body) ? response.body : [];
+    // Fetch all member types in parallel for faster extraction
+    const results = await Promise.allSettled(
+      memberTypes.map(type => getChannelMembers(roomBot, channelId, type, limit))
+    );
+
+    // Process results
+    results.forEach((result, index) => {
+      const type = memberTypes[index];
+
+      if (result.status === 'fulfilled') {
+        const members = Array.isArray(result.value.body) ? result.value.body : [];
         membersByType[type] = members;
 
         // Add to unique members map to avoid duplicates
@@ -43,11 +50,11 @@ export async function getAllChannelMembers(
             }
           });
         }
-      } catch (error) {
-        console.log(`Warning: Could not fetch ${type} members:`, error.message);
+      } else {
+        console.log(`Warning: Could not fetch ${type} members:`, result.reason?.message || result.reason);
         membersByType[type] = [];
       }
-    }
+    });
 
     const uniqueMembersList = Array.from(uniqueMembers.values());
     const totalCount = uniqueMembersList.length;

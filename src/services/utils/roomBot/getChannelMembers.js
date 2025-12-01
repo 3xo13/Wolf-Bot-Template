@@ -1,4 +1,4 @@
-export async function getChannelMembers(roomBot, channelId, listType = 'regular', limit = 100) {
+export async function getChannelMembers (roomBot, channelId, listType = 'regular', limit = 100) {
   if (!roomBot.connected) {
     throw new Error('Not connected');
   }
