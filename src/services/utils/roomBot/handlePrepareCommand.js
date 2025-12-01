@@ -33,6 +33,13 @@ export const handlePrepareCommand = async (botManager) => {
       throw new Error('بوت الرووم غير متصل\nيرجى تغيير الحساب');
     }
 
+    botManager.isPreparing = true;
+    await sendPrivateMessage(
+      botManager.config.baseConfig.orderFrom,
+      'جاري التجهيز...',
+      mainBot, mainBot
+    );
+
     // mark all room bots as working
     botManager.getRoomBots().forEach(bot => bot.setIsWorking(true));
 
@@ -101,5 +108,6 @@ export const handlePrepareCommand = async (botManager) => {
     throw error;
   } finally {
     botManager.setIsBusy(false);
+    botManager.isPreparing = false;
   }
 };

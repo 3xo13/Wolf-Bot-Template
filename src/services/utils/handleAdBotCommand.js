@@ -16,6 +16,14 @@ import handleHelpCommand from '../handleHelpCommand.js';
 export const handleAdBotCommand = async (command, args) => {
   const { clientSocket, botManager } = args;
   const mainBot = botManager.getMainBot();
+  if (botManager.isPreparing) {
+    await sendPrivateMessage(
+      botManager.config.baseConfig.orderFrom,
+      'يرجى الانتظار ...',
+      mainBot, mainBot
+    );
+    return;
+  }
   try {
     const [commandName, data, ...rest] = command.body.split('\n');
     switch (commandName) {

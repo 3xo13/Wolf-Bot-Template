@@ -34,6 +34,7 @@ class BotStateManager {
     this.adBotsReconnectTimer = null;
     this._mainBotSchedulerRef = null;
     this.lastStep = 0;
+    this.isPreparing = false;
   }
 
   // Set the socket connection instance

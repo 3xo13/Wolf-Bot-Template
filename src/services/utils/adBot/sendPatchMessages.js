@@ -3,6 +3,9 @@ import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js';
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 
 function waitMilliseconds (milliseconds) {
+  if (milliseconds <= 0) {
+    return Promise.resolve();
+  }
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 

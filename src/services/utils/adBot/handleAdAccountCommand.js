@@ -39,8 +39,19 @@ export const handleAdAccountCommand = async (botManager, data) => {
     updateTimers(botManager, 'ad');
     // botManager.startAdBotsReconnectScheduler();
     // Connect the required number of ad bots
-    for (let i = 0; i < instanceCount; i++) {
-      const newAdBot = await botManager.connect('ad');
+    try {
+      await Promise.all(
+        Array.from({ length: instanceCount }, () => botManager.connect('ad'))
+      );
+    } catch (error) {
+      // If any connection fails, disconnect and clear all ad bots
+      await botManager.clearAdBots();
+      await sendPrivateMessage(
+        botManager.config.baseConfig.orderFrom,
+        '❌ فشل في الاتصال بأحد بوتات الإعلانات، يرجى التحقق من التوكن أو تغيير الحساب ',
+        mainBot, mainBot
+      );
+      throw error;
     }
     // Update the workflow state to indicate ad step
     setStepState(botManager, 'ad');
