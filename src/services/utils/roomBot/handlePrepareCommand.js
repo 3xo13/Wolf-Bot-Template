@@ -89,7 +89,8 @@ export const handlePrepareCommand = async (botManager) => {
       // Notify user of next step
       await sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
-        `${adBotSteps.members.description}\n${adBotSteps.members.nextStepMessage}`,
+        `${adBotSteps.members.description}\n${adBotSteps.members.nextStepMessage}
+      `,
         mainBot, mainBot
       );
     } else {

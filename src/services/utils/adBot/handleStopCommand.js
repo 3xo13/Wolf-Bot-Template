@@ -8,6 +8,7 @@ import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 export const handleStopCommand = async (botManager) => {
   try {
     const mainBot = botManager.getMainBot();
+    console.log('🚀 ~ handleStopCommand ~ botManager.botType:', botManager.botType);
     if (botManager.botType === 'ad') {
       if (checkBotStep(botManager, 'sending')) {
         await botManager.clearState();
@@ -15,6 +16,12 @@ export const handleStopCommand = async (botManager) => {
         await sendPrivateMessage(
           botManager.config.baseConfig.orderFrom,
           userMessages.stateCleared,
+          mainBot
+        );
+      } else {
+        await sendPrivateMessage(
+          botManager.config.baseConfig.orderFrom,
+          'البوت لا يعمل حالياً.',
           mainBot
         );
       }
@@ -26,6 +33,12 @@ export const handleStopCommand = async (botManager) => {
         await sendPrivateMessage(
           botManager.config.baseConfig.orderFrom,
           userMessages.stateCleared,
+          mainBot
+        );
+      } else {
+        await sendPrivateMessage(
+          botManager.config.baseConfig.orderFrom,
+          'البوت لا يعمل حالياً.',
           mainBot
         );
       }

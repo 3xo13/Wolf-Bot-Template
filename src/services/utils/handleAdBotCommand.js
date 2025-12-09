@@ -16,7 +16,8 @@ import handleHelpCommand from '../handleHelpCommand.js';
 export const handleAdBotCommand = async (command, args) => {
   const { clientSocket, botManager } = args;
   const mainBot = botManager.getMainBot();
-  if (botManager.isPreparing) {
+  const [commandName, data, ...rest] = command.body.split('\n');
+  if (botManager.isPreparing && commandName !== 'اعاده تعيين البوت') {
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
       'يرجى الانتظار ...',
@@ -25,7 +26,6 @@ export const handleAdBotCommand = async (command, args) => {
     return;
   }
   try {
-    const [commandName, data, ...rest] = command.body.split('\n');
     switch (commandName) {
       case 'حساب رومات':
         await handleRoomCommand(data, botManager);

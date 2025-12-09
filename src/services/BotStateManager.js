@@ -35,6 +35,7 @@ class BotStateManager {
     this._mainBotSchedulerRef = null;
     this.lastStep = 0;
     this.isPreparing = false;
+    this.botType = config.baseConfig.botType || 'ad'; // 'ad' or 'magic'
   }
 
   // Set the socket connection instance

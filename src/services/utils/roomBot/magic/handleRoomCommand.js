@@ -93,7 +93,9 @@ export const handleRoomCommand = async (token, botManager) => {
     } else {
       await sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
-        `${magicBotSteps.room.description}\n${magicBotSteps.room.nextStepMessage}`,
+        `${magicBotSteps.room.description}
+         عدد الرومات ( ${channelsIds.length} )
+        ${magicBotSteps.room.nextStepMessage}`,
         mainBot, mainBot
       );
     }

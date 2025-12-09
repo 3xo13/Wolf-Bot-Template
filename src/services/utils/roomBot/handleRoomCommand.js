@@ -72,7 +72,11 @@ export const handleRoomCommand = async (token, botManager) => {
     await sendUpdateEvent(botManager, updateEvents.channels.setup, { channels: channelsIds });
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
-      `${adBotSteps.room.description}\n${adBotSteps.room.nextStepMessage}`,
+      `
+      ${adBotSteps.room.description}
+       عدد الرومات ( ${channelsIds.length} )
+      ${adBotSteps.room.nextStepMessage}
+     `,
       mainBot, mainBot
     );
   } catch (error) {

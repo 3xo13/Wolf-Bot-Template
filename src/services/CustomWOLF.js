@@ -192,6 +192,35 @@ class CustomWOLF extends WOLF {
       this.once('connectionError', handleError);
       this.once('connectError', handleError);
 
+      // untested code
+      // Listen for resume event to re-establish subscriptions after auto-reconnect
+      this.on('resume', async () => {
+        console.log(`🔄 Bot ${this.botType} (${this.currentSubscriber?.id}) auto-reconnected, re-establishing subscriptions...`);
+
+        // Re-establish subscriptions for magic room bots
+        if (this.botType === 'room' && this.botManager?.getBotType?.() === 'magic') {
+          try {
+            // Re-subscribe to channel messages
+            await this.messaging._subscribeToChannel();
+
+            // Re-subscribe to audio slots for all channels
+            const channels = this.botManager.getChannels?.();
+            if (channels && channels.length > 0) {
+              for (const channelId of channels) {
+                try {
+                  await this.stage.slot.list(channelId);
+                } catch (error) {
+                  console.warn(`⚠️ Failed to re-subscribe to audio slots for channel ${channelId}:`, error.message);
+                }
+              }
+              console.log(`✅ Re-subscribed to ${channels.length} channels for bot ${this.currentSubscriber?.id}`);
+            }
+          } catch (error) {
+            console.error('Failed to re-establish subscriptions on resume:', error);
+          }
+        }
+      });
+
       // Call parent login which sets up websocket and connects
       super.login(config).catch(async (error) => {
         clearTimeout(timeoutId);
