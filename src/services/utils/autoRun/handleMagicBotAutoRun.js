@@ -1,7 +1,10 @@
 import { handleAdAccountCommand } from '../adBot/handleAdAccountCommand.js';
 import { handleAdRunCommand } from '../adBot/magic/handleAdRunCommand.js';
+import { updateEvents } from '../constants/updateEvents.js';
 import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js';
+import { getChannelList } from '../roomBot/getUsersIDs.js';
 import setStepState from '../steps/setStepState.js';
+import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 
 export const handleMagicBotAutoRun = async (botManager) => {
   const mainBot = botManager.getMainBot();
@@ -10,15 +13,41 @@ export const handleMagicBotAutoRun = async (botManager) => {
     botManager.addNewRoomBotToken(token);
   });
   const adBotToken = botManager.getAdBotsToken();
-  if (!botManager.config.baseConfig.autoRun) { throw new Error('Auto run is disabled'); }
-  if (!roomBotTokens.length) { throw new Error('No room bots tokens available'); }
-  if (!adBotToken) { throw new Error('No ad bot token available'); }
+  if (!botManager.config.baseConfig.autoRun) {
+    throw new Error('Auto run is disabled');
+  }
+  if (!roomBotTokens.length) {
+    throw new Error('No room bots tokens available');
+  }
+  if (!adBotToken) {
+    throw new Error('No ad bot token available');
+  }
   const messagingStyle = botManager.config.baseConfig.messagingStyle;
   console.log('🚀 ~ handleAdBotAutoRun ~ messagingStyle:', messagingStyle);
   const messages = botManager.config.baseConfig.messages;
   try {
     setStepState(botManager, 'room');
-    await Promise.all(roomBotTokens.map(token => botManager.connect('room')));
+    const results = await Promise.all(roomBotTokens.map(token => botManager.connect('room')));
+    if (!results.every(promise => promise)) {
+      throw new Error('Failed to connect all room bots');
+    }
+    let channelIds = [];
+    const roomBots = botManager.getRoomBots();
+    for (const roomBot of roomBots) {
+      const channels = await getChannelList(roomBot);
+      // Extract channel IDs from the channel list (channels is already an array from WOLF API)
+      const channelsIds = channels.map(channel => channel.id);
+      channelIds = channelIds.concat(channelsIds);
+      // For magic bots, subscribe to audio slots for all channels
+      for (const channelId of channelsIds) {
+        try {
+          await roomBot.stage.slot.list(channelId);
+        } catch (error) {
+          console.warn(`⚠️ Failed to subscribe to audio slots for channel ${channelId}:`, error.message);
+        }
+      }
+    }
+    await sendUpdateEvent(botManager, updateEvents.channels.setup, { channels: channelIds });
     await handleAdAccountCommand(botManager, adBotToken);
     botManager.setMessageCount(messagingStyle);
     setStepState(botManager, 'adStyle');

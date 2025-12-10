@@ -31,7 +31,9 @@ export const handleMessageCountCommand = async (command, botManager) => {
     await sendUpdateEvent(botManager, updateEvents.messagingStyle.setup, { num: messageCount });
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
-      `${adBotSteps.adStyle.description}\n${adBotSteps.adStyle.nextStepMessage}`,
+      `${adBotSteps.adStyle.description}
+      ${messageCountAsNumber === 1 ? adBotSteps.adStyle.nextStepMessage : 'أرسل رسالة الإعلان رقم ( 1 )'}
+      `,
       mainBot, mainBot
     );
   } catch (error) {

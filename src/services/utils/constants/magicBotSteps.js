@@ -41,8 +41,9 @@ export const magicBotSteps = {
   messaging: {
     name: 'جاري الاعلان',
     stepNumber: 6,
-    description: 'جاري الاستماع والرد على المستخدمين',
-    nextStepMessage: '',
+    description: `تم تشغيل البوت بنجاح
+    جاري الإعلان`,
+    nextStepMessage: 'أرسل أمر "وقف" لإيقاف البوت',
     done: false
   },
   adsSent: {

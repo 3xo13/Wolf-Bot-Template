@@ -24,7 +24,7 @@ export const adBotSteps = {
   ad: {
     name: 'اضافة حساب الاعلانات',
     stepNumber: 4,
-    description: '***حساب الإعلان متصل***',
+    description: 'حساب الإعلان متصل',
     nextStepMessage: `الرجاء اختيار نمط الإعلان
 		1- لارسال رسالة واحدة
 		2- لارسال ثلاث رسائل`,
@@ -49,14 +49,15 @@ export const adBotSteps = {
   sending: {
     name: 'جاري إرسال الإعلانات',
     stepNumber: 7,
-    description: 'جاري إرسال الإعلانات',
-    nextStepMessage: 'أرسل أمر "وقف" لإيقاف العملية',
+    description: `تم تشغيل البوت بنجاح
+    جاري الإعلان`,
+    nextStepMessage: 'أرسل أمر "وقف" لإيقاف البوت',
     done: false
   },
   adsSent: {
     name: 'تم إرسال الإعلانات',
     stepNumber: 8,
-    description: 'تم إرسال الإعلانات بنجاح',
+    description: 'تم الانتهاء والإعلان لجميع أعضاء الغرف بنجاح',
     // nextStepMessage: 'أرسل أمر "إنهاء" للمتابعة',
     done: false
   }

@@ -71,6 +71,8 @@ export const handleAdRunCommand = async (botManager) => {
       ${botManager.getMessagesDeliveredTo().length}`,
       mainBot, mainBot
     );
+    await handleBotStepReplay(botManager);
+    await sendUpdateEvent(botManager, updateEvents.state.clear, {});
   } catch (error) {
     // Log and rethrow errors for debugging
     console.log('🚀 ~ handleAdRunCommand ~ error:', error);

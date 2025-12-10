@@ -27,7 +27,7 @@ const handleMessagesChangeCommand = async (botManager) => {
     botManager.clearMessages();
     setStepState(botManager, 'adStyle');
     const singleMessageRes = 'أرسل رسالة الإعلان';
-    const mutliMessageRes = 'أرسل الرسالة الأولى';
+    const mutliMessageRes = 'أرسل رسالة الإعلان رقم ( 1 )';
     const userMessage = messageCount < 2 ? singleMessageRes : mutliMessageRes;
     await sendPrivateMessage(userId, userMessage, mainBot);
   } catch (error) {

@@ -40,8 +40,7 @@ const handleBotStepReplay = async (botManager) => {
     }
 
     // Build status message
-    const statusMessage = `🔹 ${step.description}\n\n` +
-			`➡️ ${step.nextStepMessage}`;
+    const statusMessage = step.nextStepMessage;
 
     // Send the status message
     await sendPrivateMessage(userId, statusMessage, mainBot);

@@ -5,60 +5,12 @@ import waitUntilAllBotsIdle from '../../helpers/waitForBotsIdle.js';
  * @param {String} url - URL to check
  * @returns {Number|null} Group ID or null
  */
-function extractWolfGroupId (url) {
-  // Match patterns like:
-  // https://app.wolf.live/12345 (direct ID)
-  // https://app.wolf.live/g/12345 (with /g/ prefix)
-  // https://wolf.live/12345
-  // https://wolf.live/g/12345
-  // wolf://g/12345
-  const patterns = [
-    /(?:https?:\/\/)?(?:app\.)?wolf\.live\/g\/(\d+)/i, // with /g/
-    /(?:https?:\/\/)?(?:app\.)?wolf\.live\/(\d+)/i, // direct ID
-    /wolf:\/\/g\/(\d+)/i // wolf:// protocol
-  ];
-
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match && match[1]) {
-      return parseInt(match[1]);
-    }
-  }
-  return null;
-}
 
 /**
  * Find and annotate WOLF internal group links for embeds
  * @param {String} message - Message text containing links
  * @returns {Array} Array of link objects with groupId for GROUP_PREVIEW embeds
  */
-function findWolfGroupLinks (message) {
-  const links = [];
-
-  // Find all WOLF group URLs in the message
-  // Matches: app.wolf.live/12345, app.wolf.live/g/12345, wolf.live/12345, wolf://g/12345
-  const urlPattern = /(?:https?:\/\/)?(?:(?:app\.)?wolf\.live\/(?:g\/)?(\d+)|wolf:\/\/g\/(\d+))/gi;
-  let match;
-
-  // Reset regex state
-  urlPattern.lastIndex = 0;
-
-  while ((match = urlPattern.exec(message)) !== null) {
-    const url = match[0];
-    const groupId = extractWolfGroupId(url);
-
-    if (groupId) {
-      links.push({
-        start: match.index,
-        end: match.index + url.length,
-        url,
-        groupId // This tells WOLF API to create GROUP_PREVIEW embed
-      });
-    }
-  }
-
-  return links;
-}
 
 /**
  * Send a private message to a subscriber using the official WOLF client
@@ -87,9 +39,6 @@ export async function sendPrivateMessage (subscriberId, message, client, mainBot
     // Use the official WOLF client's messaging.sendPrivateMessage method
     const activeClient = adBotClient || client;
 
-    // Find WOLF internal group links for GROUP_PREVIEW embeds
-    const wolfGroupLinks = findWolfGroupLinks(message.toString());
-
     const options = {
       formatting: {
         includeEmbeds: true, // Enable link previews and embeds
@@ -101,11 +50,6 @@ export async function sendPrivateMessage (subscriberId, message, client, mainBot
         alert: false
       }
     };
-
-    // Add WOLF group links with groupId for automatic GROUP_PREVIEW embeds
-    if (wolfGroupLinks.length > 0) {
-      options.links = wolfGroupLinks;
-    }
 
     // Official WOLF API handles message chunking, formatting, and socket emission internally
     const response = await activeClient.messaging.sendPrivateMessage(

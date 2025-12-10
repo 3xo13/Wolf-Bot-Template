@@ -51,11 +51,11 @@ export const handleMagicBotCommand = async (command, args) => {
         await handleStateReport(botManager);
         return;
 
-      case 'تغيير رساله اعلان':
+      case 'ت اعلان':
         await handleMessagesChangeCommand(botManager);
         return;
 
-      case 'عرض رساله اعلان':
+      case 'ع اعلان':
         await handleShowMessagesCommand(botManager);
         return;
 

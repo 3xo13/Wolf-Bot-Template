@@ -3,7 +3,7 @@ import { magicBotSteps } from '../../constants/magicBotSteps.js';
 import { updateEvents } from '../../constants/updateEvents.js';
 import { sendUpdateEvent } from '../../updates/sendUpdateEvent.js';
 
-async function handleBotRotation(botManager) {
+async function handleBotRotation (botManager) {
   const adBots = botManager.getAdBots();
   const adBotsQueue = botManager.adBotsQueue;
   const channelUsers = botManager.channelUsersToMessageQueue;
@@ -52,11 +52,11 @@ export const handleGroupMessage = async (botManager, channelMessage) => {
     }
 
     // Extract user ID from different possible message properties
-    const userId = channelMessage.originator?.id
-      || channelMessage.sourceSubscriberId
-      || channelMessage.subscriber?.id
-      || channelMessage.subscriberId
-      || channelMessage.occupierId;  // For audio slot updates
+    const userId = channelMessage.originator?.id ||
+      channelMessage.sourceSubscriberId ||
+      channelMessage.subscriber?.id ||
+      channelMessage.subscriberId ||
+      channelMessage.occupierId; // For audio slot updates
 
     if (!userId) {
       // For audio count updates or other events without user IDs, skip silently

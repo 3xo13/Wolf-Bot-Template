@@ -6,8 +6,7 @@ const handleShowMessagesCommand = async (botManager) => {
     const mainBot = botManager.getMainBot();
     const messages = botManager.getMessages();
     const messageCount = botManager.getMessageCount();
-    const messagesString = `نمط الارسال
-		${messageCount === 1 ? 'رسالة واحدة' : messageCount === 3 ? 'ثلاث رسائل' : 'غير محدد'}\n
+    const messagesString = `نمط الإعلان ${messageCount === 1 ? ': رسالة واحدة' : messageCount === 3 ? ': ثلاث رسائل' : 'غير محدد'}\n
 		${messages[0] ? 'الرسالة الأولى' : ''}
 		${messages[0] || ''}\n
 		${messages[1] ? 'الرسالة الثانية' : ''}

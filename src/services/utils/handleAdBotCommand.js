@@ -60,16 +60,20 @@ export const handleAdBotCommand = async (command, args) => {
         await handleStateReport(botManager);
         return;
 
-      case 'عرض رساله اعلان':
+      case 'ع اعلان':
         await handleShowMessagesCommand(botManager);
         return;
 
-      case 'تغيير رساله اعلان':
+      case 'ت اعلان':
         await handleMessagesChangeCommand(botManager);
         return;
 
       case 'مساعده':
         await handleHelpCommand(botManager);
+        return;
+
+      case 'متابعه':
+        // Add the logic for the "متابعه" command here
         return;
 
       default:

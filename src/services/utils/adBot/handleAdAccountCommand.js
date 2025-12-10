@@ -9,6 +9,7 @@ import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 import { checkBotStep } from '../steps/checkBotStep.js';
 import { updateTimers } from '../../helpers/updateTimers.js';
 import handleBotStepReplay from '../steps/handleBotStepReplay.js';
+import { userMessages } from '../constants/userMessages.js';
 
 export const handleAdAccountCommand = async (botManager, data) => {
   botManager.setIsBusy(true);
@@ -17,7 +18,8 @@ export const handleAdAccountCommand = async (botManager, data) => {
     const mainBot = botManager.getMainBot();
     const botType = botManager.getBotType();
     const step = botManager.getBotType() === 'ad' ? 'members' : 'room';
-
+    const existingCount = botManager.getMessageCount();
+    const shuldSkipSteps = existingCount === 1 || existingCount === 3;
     if (!checkBotStep(botManager, step)) {
       await handleBotStepReplay(botManager);
       return;
@@ -59,9 +61,16 @@ export const handleAdAccountCommand = async (botManager, data) => {
     await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: data });
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
-      `${adBotSteps.ad.description}\n${adBotSteps.ad.nextStepMessage}`,
+      `${adBotSteps.ad.description}\n${!shuldSkipSteps ? adBotSteps.ad.nextStepMessage : ''}`,
       mainBot, mainBot
     );
+
+    if (shuldSkipSteps) {
+      setStepState(botManager, 'message');
+      await sendPrivateMessage(botManager.config.baseConfig.orderFrom, userMessages.skipMessageStep, botManager.getMainBot());
+      await handleBotStepReplay(botManager);
+      return;
+    }
   } catch (error) {
     // Log and re-throw any errors encountered during ad bot setup
     console.log('🚀 ~ handleAdAccountCommand ~ error:', error);

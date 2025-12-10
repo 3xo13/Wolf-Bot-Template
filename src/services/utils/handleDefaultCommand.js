@@ -3,7 +3,6 @@ import { adBotSteps } from './constants/adBotSteps.js';
 // Import event types for update notifications
 import { updateEvents } from './constants/updateEvents.js';
 // Import user-facing message templates
-import { userMessages } from './constants/userMessages.js';
 // Function to send a private message to a user
 import { sendPrivateMessage } from './messaging/sendPrivateMessage.js';
 import { checkBotStep } from './steps/checkBotStep.js';
@@ -72,7 +71,7 @@ export const handleDefaultCommand = async (botManager, command) => {
         await botManager.setMessage(command.body);
         await sendPrivateMessage(
           botManager.config.baseConfig.orderFrom,
-          userMessages.sendNextMessage,
+          'أرسل رسالة الإعلان رقم ( 2 )',
           mainBot, mainBot
         );
         await sendUpdateEvent(botManager, updateEvents.message.setup, { message: command.body, index: 1 });
@@ -107,7 +106,7 @@ export const handleDefaultCommand = async (botManager, command) => {
           // Otherwise, prompt user to send the next message
           await sendPrivateMessage(
             botManager.config.baseConfig.orderFrom,
-            userMessages.sendNextMessage,
+            'أرسل رسالة الإعلان رقم ( 3 )',
             mainBot, mainBot
           );
         }

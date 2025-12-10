@@ -38,6 +38,7 @@ export async function getAllChannelMembers (
       if (result.status === 'fulfilled') {
         const members = Array.isArray(result.value.body) ? result.value.body : [];
         membersByType[type] = members;
+        console.log(`✅ Extracted ${members.length} ${type} members from channel ${channelId}`);
 
         // Add to unique members map to avoid duplicates
         if (Array.isArray(members)) {

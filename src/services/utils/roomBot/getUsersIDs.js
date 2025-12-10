@@ -19,14 +19,16 @@ export const extractChannelMembers = async (roomBot, botManager, channelId) => {
       const allMembers = await getAllChannelMembers(
         roomBot,
         channelId,
-        999999999999999
+        99999999
       );
 
-      // Add all unique member IDs to botManager
+      // In getUsersIDs.js
       if (allMembers?.allMembers?.length) {
+        console.log(`🔵 Starting to add ${allMembers.allMembers.length} members from channel ${channelId}`);
         allMembers.allMembers.forEach((member) => {
           botManager.addUser(member.id.toString());
         });
+        console.log(`🟢 Finished adding members from channel ${channelId}`);
       }
     } catch (error) {
       console.log(`❌ Channel ${channelId}: Failed to extract members -`, error.message);
