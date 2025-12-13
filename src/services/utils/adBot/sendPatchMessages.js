@@ -9,6 +9,11 @@ function waitMilliseconds (milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+const hasLink = (string) => {
+  const urlPattern = /https?:\/\/[^\s]+|www\.[^\s]+|\[.+?\]\(.+?\)/g;
+  return urlPattern.test(string);
+};
+
 function extractAdBotPatchState (botManager) {
   return {
     // messages: callers should use botManager.getMessages() — messages are built per-send
@@ -75,9 +80,14 @@ async function sendPatchMessages (botManager) {
               ...messagesDeliveredTo,
               userId
             ]);
-            const text = messages[0];
-
-            sendPrivateMessage(userId, text, bot);
+            const message = messages[0];
+            sendPrivateMessage(userId, message, bot);
+            // if (hasLink(text)) {
+            //   const res = await sendPrivateMessage(userId, text, bot);
+            //   console.log('🚀 ~ sendPatchMessages ~ res:', res);
+            // } else {
+            //   sendPrivateMessage(userId, text, bot);
+            // }
 
             await waitMilliseconds(accountsWaitTime);
           }
@@ -99,14 +109,18 @@ async function sendPatchMessages (botManager) {
           bot.setIsWorking(true);
           if (bot) {
             for (let m = 0; m < Math.min(3, messages.length); m++) {
-              const text = messages[m];
-              if (!text) {
+              const message = messages[m];
+              if (!message) {
                 console.warn('No message text for index', m);
                 continue;
               }
-
-              sendPrivateMessage(userId, text, bot, null, bot);
-
+              sendPrivateMessage(userId, message, bot);
+              // if (hasLink(text)) {
+              //   const res = await sendPrivateMessage(userId, text, bot);
+              //   console.log('🚀 ~ sendPatchMessages ~ res:', res);
+              // } else {
+              //   await sendPrivateMessage(userId, text, bot);
+              // }
               if (m !== 2) {
                 await waitMilliseconds(betweenMessagesMillisecInterval);
               }

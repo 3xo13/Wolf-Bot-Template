@@ -6,7 +6,7 @@ import { sendUpdateEvent } from '../../updates/sendUpdateEvent.js';
 async function handleBotRotation (botManager) {
   const adBots = botManager.getAdBots();
   const adBotsQueue = botManager.adBotsQueue;
-  const channelUsers = botManager.channelUsersToMessageQueue;
+  const channelUsers = botManager.getChannelUsersToMessageQueue();
   console.log('🚀 ~ handleBotRotation ~ channelUsersQueue:', channelUsers.length);
   console.log('🚀 ~ handleBotRotation ~ adBotsQueue:', adBotsQueue.map(bot => ({ botId: bot.id, sending: bot.sending })));
 
@@ -31,7 +31,7 @@ async function handleBotRotation (botManager) {
   }).filter(bot => bot !== null);
 
   const usersPatch = availableBots.map((bot, index) => {
-    const user = botManager.channelUsersToMessageQueue[index];
+    const user = channelUsers[index];
     if (user) {
       botManager.removeChannelUserFromQueue(user.userId);
       botManager.updateAdBotQueue(bot.id, { sending: true });

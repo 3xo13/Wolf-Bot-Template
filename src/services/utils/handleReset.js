@@ -7,8 +7,8 @@ export const handleReset = async (botManager) => {
   try {
     const mainBot = botManager.getMainBot();
     await botManager.resetState();
-    await sendUpdateEvent(botManager, updateEvents.state.reset, {});
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, userMessages.stateReset, mainBot, mainBot);
+    await sendUpdateEvent(botManager, updateEvents.state.reset, {});
   } catch (error) {
     console.log('🚀 ~ handleReset ~ error:', error);
     throw error;

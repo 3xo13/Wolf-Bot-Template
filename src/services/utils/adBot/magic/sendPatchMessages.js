@@ -10,6 +10,11 @@ function waitMilliseconds (milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+function hasLink (string) {
+  const urlPattern = /https?:\/\/[^\s]+|www\.[^\s]+|\[.+?\]\(.+?\)/g;
+  return urlPattern.test(string);
+}
+
 function extractAdBotPatchState (botManager) {
   return {
     messages: botManager.getMessages(),
@@ -50,8 +55,14 @@ async function sendPatchMessages (botManager, patch) {
           timer.setMinutes(timer.getMinutes() + minutesTimer);
 
           botManager.updateChannelUserTimer(userId, timer.getTime());
-
-          await sendPrivateMessage(userId, messages[0], bot.bot);
+          sendPrivateMessage(userId, messages[0], bot.bot);
+          // if (hasLink(messages[0])) {
+          //   const res = await sendPrivateMessage(userId, messages[0], bot.bot);
+          //   console.log('🚀 ~ sendPatchMessages ~ res:', res);
+          //   // sendPrivateMessage(userId, messages[0], bot.bot);
+          // } else {
+          //   sendPrivateMessage(userId, messages[0], bot.bot);
+          // }
           botManager.updateAdsCount();
           sendUpdateEvent(botManager, updateEvents.ad.update, { adsSent: botManager.channelsAdsSent });
           await waitMilliseconds(accountsWaitTime);
@@ -65,7 +76,13 @@ async function sendPatchMessages (botManager, patch) {
         if (bot && messages.length > 0) {
           for (let m = 0; m < messages.slice(0, 3).length; m++) {
             const message = messages[m];
-            await sendPrivateMessage(userId, message, bot.bot);
+            sendPrivateMessage(userId, message, bot.bot);
+            // if (hasLink(message)) {
+            //   const res = await sendPrivateMessage(userId, message, bot.bot);
+            //   console.log('🚀 ~ sendPatchMessages ~ res:', res);
+            // } else {
+            //   sendPrivateMessage(userId, message, bot.bot);
+            // }
             await waitMilliseconds(100);
           }
           await waitMilliseconds(accountsWaitTime);

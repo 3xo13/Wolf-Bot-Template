@@ -110,11 +110,11 @@ export const handleDefaultCommand = async (botManager, command) => {
             mainBot, mainBot
           );
         }
-      } else {
-        // If too many messages or invalid command, notify the user
-        await handleBotStepReplay(botManager);
-        return;
       }
+    } else {
+      // If too many messages or invalid command, notify the user
+      await handleBotStepReplay(botManager);
+      return;
     }
   } catch (error) {
     // Log and rethrow errors for debugging

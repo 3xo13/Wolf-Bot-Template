@@ -31,22 +31,35 @@ export const handleMagicBotAutoRun = async (botManager) => {
     if (!results.every(promise => promise)) {
       throw new Error('Failed to connect all room bots');
     }
-    let channelIds = [];
     const roomBots = botManager.getRoomBots();
-    for (const roomBot of roomBots) {
-      const channels = await getChannelList(roomBot);
-      // Extract channel IDs from the channel list (channels is already an array from WOLF API)
+
+    // Get all channel lists in parallel
+    const channelResults = await Promise.all(
+      roomBots.map(roomBot => getChannelList(roomBot))
+    );
+
+    // Extract all channel IDs
+    let channelIds = [];
+    const roomBotChannelPairs = [];
+
+    channelResults.forEach((channels, index) => {
       const channelsIds = channels.map(channel => channel.id);
       channelIds = channelIds.concat(channelsIds);
-      // For magic bots, subscribe to audio slots for all channels
-      for (const channelId of channelsIds) {
+      channelsIds.forEach(channelId => {
+        roomBotChannelPairs.push({ roomBot: roomBots[index], channelId });
+      });
+    });
+
+    // Subscribe to audio slots for all channels in parallel
+    await Promise.all(
+      roomBotChannelPairs.map(async ({ roomBot, channelId }) => {
         try {
           await roomBot.stage.slot.list(channelId);
         } catch (error) {
           console.warn(`⚠️ Failed to subscribe to audio slots for channel ${channelId}:`, error.message);
         }
-      }
-    }
+      })
+    );
     await sendUpdateEvent(botManager, updateEvents.channels.setup, { channels: channelIds });
     await handleAdAccountCommand(botManager, adBotToken);
     botManager.setMessageCount(messagingStyle);

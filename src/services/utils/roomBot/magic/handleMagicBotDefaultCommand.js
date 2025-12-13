@@ -15,6 +15,11 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
     const channels = await getChannelList(newRoomBot);
     // Extract channel IDs from the channel list (channels is already an array from WOLF API)
     const channelsIds = channels.map(channel => channel.id);
+
+    if (channelsIds.length === 0) {
+      await botManager.clearRoomBots();
+      throw new Error('لا يوجد رومات في هذا الحساب');
+    }
     // Update botManager with the channel IDs
     botManager.setChannels([
       ...botManager.getChannels(),

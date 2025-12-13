@@ -55,6 +55,11 @@ export const handleRoomCommand = async (token, botManager) => {
     // Extract channel IDs from the channel list (channels is already an array from WOLF API)
     const channelsIds = channels.map(channel => channel.id);
 
+    if (channelsIds.length === 0) {
+      await botManager.clearRoomBots();
+      throw new Error('لا يوجد رومات في هذا الحساب');
+    }
+
     // Check if the number of channels exceeds allowed instance limit
     if (!botManager.isRoomBotLimitValid()) {
       throw new Error(

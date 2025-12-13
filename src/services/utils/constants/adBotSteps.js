@@ -4,7 +4,7 @@ export const adBotSteps = {
     name: 'الخطوة الرئيسية',
     stepNumber: 1,
     description: 'البوت متصل',
-    nextStepMessage: 'أرسل أمر "حساب رومات\nAAAAAAA" للمتابعة',
+    nextStepMessage: 'أرسل أمر "حساب رومات\nWE-AAAAAAAAA" للمتابعة',
     done: false
   },
   room: {

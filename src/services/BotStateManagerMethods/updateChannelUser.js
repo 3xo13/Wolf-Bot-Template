@@ -5,11 +5,11 @@ export function updateChannelUserFn (manager, userId, timer) {
       return;
     } else {
       manager.channelUsers.set(userId, { timer });
-      manager.channelUsersToMessageQueue.push({ userId, addedAt: Date.now() });
+      manager.channelUsersToMessageQueue.set(userId, { userId, addedAt: Date.now() });
     }
   } else {
     manager.channelUsers.set(userId, { timer });
-    manager.channelUsersToMessageQueue.push({ userId, addedAt: Date.now() });
+    manager.channelUsersToMessageQueue.set(userId, { userId, addedAt: Date.now() });
   }
 }
 
