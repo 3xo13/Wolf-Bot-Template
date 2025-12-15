@@ -41,7 +41,7 @@ io.on('connection', async (clientSocket) => {
     // console.log('Client connected:', clientSocket.id);
 
     clientSocket.on('init-api', async (request) => {
-      // console.log('🚀 ~ request:', request);
+      console.log('🚀 ~ request:', request);
       const config = {
         ...request,
         mainBotConfig: {
@@ -64,16 +64,18 @@ io.on('connection', async (clientSocket) => {
             port: request.roomBotConfig.port
           }
         },
-        adBotConfig: {
-          ...WOLF_CONFIG,
-          token: request.adBotConfig.token,
-          proxy: {
-            ...WOLF_CONFIG.proxy,
-            enabled: !!(request.adBotConfig.host && request.adBotConfig.port),
-            host: request.adBotConfig.host,
-            port: request.adBotConfig.port
-          }
-        }
+        adBotConfig: [
+          ...request.adBotConfig.map(adBot => ({
+            ...WOLF_CONFIG,
+            token: adBot.token,
+            proxy: {
+              ...WOLF_CONFIG.proxy,
+              enabled: !!(adBot.ipAddress && adBot.port),
+              host: adBot.ipAddress,
+              port: adBot.port
+            }
+          }))
+        ]
       };
       const botId = request.botId;
       if (!botId) {

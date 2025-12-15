@@ -3,7 +3,7 @@ import { handleAdBotCommand } from '../utils/handleAdBotCommand.js';
 import { handleMagicBotCommand } from '../utils/handleMagicBotCommand.js';
 import { handleGroupMessage } from '../utils/roomBot/magic/handleGroupMessage.js';
 
-export async function connectFn (manager, botType) {
+export async function connectFn (manager, botType, adBotIndex) {
   const { mainBotConfig, roomBotConfig, adBotConfig } = manager.config;
   let botInstance;
   switch (botType) {
@@ -91,7 +91,10 @@ export async function connectFn (manager, botType) {
     }
     case 'ad':
       botInstance = new CustomWOLF(manager, 'ad');
-      await botInstance.login(adBotConfig);
+      if (!adBotConfig[adBotIndex]) {
+        throw new Error(`Ad bot configuration not found at index ${adBotIndex}`);
+      }
+      await botInstance.login({ ...adBotConfig[adBotIndex] });
       manager.adBots.push(botInstance);
       break;
     default:

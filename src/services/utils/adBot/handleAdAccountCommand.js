@@ -18,6 +18,7 @@ export const handleAdAccountCommand = async (botManager, data) => {
     const mainBot = botManager.getMainBot();
     const botType = botManager.getBotType();
     const step = botManager.getBotType() === 'ad' ? 'members' : 'room';
+    const currentAdBotIndex = botManager.config.adBotConfig.findIndex(adBot => !adBot.token);
     const existingCount = botManager.getMessageCount();
     const shuldSkipSteps = existingCount === 1 || existingCount === 3;
     if (!checkBotStep(botManager, step)) {
@@ -33,7 +34,7 @@ export const handleAdAccountCommand = async (botManager, data) => {
       throw new Error('يرجى ادخال توكين الحساب بشكل صحيح\nWE-AAAAAAAA');
     }
     // Set the ad bot token for authentication
-    botManager.setAdBotToken(data);
+    botManager.setAdBotToken(data, currentAdBotIndex);
     // Get the number of ad bot instances to create
     const instanceCount = botManager.config.baseConfig.instanceCount;
     console.log('🚀 ~ handleCommand ~ instanceCount:', instanceCount);
@@ -43,7 +44,7 @@ export const handleAdAccountCommand = async (botManager, data) => {
     // Connect the required number of ad bots
     try {
       await Promise.all(
-        Array.from({ length: instanceCount }, () => botManager.connect('ad'))
+        Array.from({ length: instanceCount }, () => botManager.connect('ad', currentAdBotIndex))
       );
     } catch (error) {
       // If any connection fails, disconnect and clear all ad bots
@@ -55,10 +56,23 @@ export const handleAdAccountCommand = async (botManager, data) => {
       );
       throw error;
     }
+
+    // Notify the user that ad bots are ready and provide next step instructions
+    await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: data, index: currentAdBotIndex });
+
+    if (!botManager.config.adBotConfig.every(adBotConfig => adBotConfig.token)) {
+      sendPrivateMessage(
+        botManager.config.baseConfig.orderFrom,
+        `حساب الروومات رقم ( ${currentAdBotIndex + 1} ) متصل بنجاح
+        يرجى إرسال "حساب اعلان" مع توكين الحساب رقم ( ${currentAdBotIndex + 2} )`,
+        mainBot, mainBot
+      );
+      return;
+    }
+
     // Update the workflow state to indicate ad step
     setStepState(botManager, 'ad');
-    // Notify the user that ad bots are ready and provide next step instructions
-    await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: data });
+
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
       `${adBotSteps.ad.description}\n${!shuldSkipSteps ? adBotSteps.ad.nextStepMessage : ''}`,

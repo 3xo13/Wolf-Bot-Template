@@ -15,6 +15,7 @@ class BotStateManager {
     this.mainBot = null; // Main bot instance
     this.roomBots = []; // Array of room bot instances
     this.adBots = []; // Array of ad bot instances
+    this.adBotsCount = this.config.adBotConfig.length || 0;
     this.users = new Set(); // Set of unique user IDs
     this.messagesDeliverdeTo = new Set(); // Set of user IDs to whom messages have been delivered
     this.lastUserIndex = 0;
@@ -51,7 +52,7 @@ class BotStateManager {
   }
 
   // Create and connect a new bot instance based on type
-  async connect (botType) { return connectFn(this, botType); }
+  async connect (botType, adBotIndex) { return connectFn(this, botType, adBotIndex); }
 
   // Getters for state
   getMainBot () { return this.mainBot; }
@@ -98,7 +99,7 @@ class BotStateManager {
   setCurrentStep (step) { this.currentStep = step; };
   addUser (userId) { this.users.add(userId); };
   setRoomBotToken (token) { this.config.roomBotConfig.token = token; };
-  setAdBotToken (token) { this.config.adBotConfig.token = token; };
+  setAdBotToken (token, index) { this.config.adBotConfig[index].token = token; };
   setIsBusy (isBusy) { this.isBusy = isBusy; };
   updateAdBotQueue (botId, data) {
     const botIndex = this.adBotsQueue.findIndex(bot => bot.id === botId);
@@ -257,7 +258,7 @@ class BotStateManager {
     this.adBotsQueue = [];
     this.channelUsersToMessageQueue.clear();
     this.roomBotsTokens = [];
-
+    this.config.adBotConfig = this.config.adBotConfig.map((obj) => ({ ...obj, token: '' }));
     // mark destroyed so future callbacks can no-op
     this._destroyed = true;
   }
