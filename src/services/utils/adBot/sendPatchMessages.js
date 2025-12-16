@@ -64,8 +64,12 @@ async function sendPatchMessages (botManager) {
         currentIndex = users.length + 1;
         return;
       }
-      // todo: remove reverse after testing
-      const patchUsers = users.reverse().slice(currentIndex, currentIndex + patchSize);
+      let patchUsers = [];
+      if (patchSize >= users.length - currentIndex) {
+        patchUsers = users.slice(currentIndex);
+      } else {
+        patchUsers = users.slice(currentIndex, currentIndex + patchSize);
+      }
       if (messageCount === 1) {
         // Each bot sends one message to one user
         for (let i = 0; i < patchUsers.length; i++) {

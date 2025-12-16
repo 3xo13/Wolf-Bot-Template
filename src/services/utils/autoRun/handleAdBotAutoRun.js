@@ -54,7 +54,7 @@ export const handleAdBotAutoRun = async (botManager) => {
       await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: tokenConfig.token, index: i });
       await sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
-        `حساب الروومات رقم ( ${i + 1} ) متصل بنجاح`,
+        `حساب الإعلان رقم ( ${i + 1} ) متصل بنجاح`,
         mainBot, mainBot
       );
     }

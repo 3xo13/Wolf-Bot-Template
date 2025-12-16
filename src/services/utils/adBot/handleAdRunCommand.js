@@ -62,17 +62,21 @@ export const handleAdRunCommand = async (botManager) => {
     // Notify client about completion of ad sending
     await sendUpdateEvent(botManager, updateEvents.ad.done, { ads: botManager.getMessages().length });
     // Send a private message to the user with next step instructions
-    await sendPrivateMessage(
-      botManager.config.baseConfig.orderFrom,
-      `${adBotSteps.adsSent.description}\n
+    if (botManager.getUsers().length > 0) {
+      await sendPrivateMessage(
+        botManager.config.baseConfig.orderFrom,
+        `${adBotSteps.adsSent.description}\n
       إجمالي الأعضاء:
       ${botManager.getUsers().length}
       عدد الإعلانات:
       ${botManager.getMessagesDeliveredTo().length}`,
-      mainBot, mainBot
-    );
-    await handleBotStepReplay(botManager);
+        mainBot, mainBot
+      );
+      await handleBotStepReplay(botManager);
+    }
+
     await sendUpdateEvent(botManager, updateEvents.state.clear, {});
+    await botManager.clearState();
   } catch (error) {
     // Log and rethrow errors for debugging
     console.log('🚀 ~ handleAdRunCommand ~ error:', error);

@@ -191,6 +191,7 @@ class BotStateManager {
   clearUsers () { this.users.clear(); }
   clearChannels () { this.channels.clear(); }
   clearMessages () { this.messages.clear(); }
+  clearAdBotsTokens () { this.config.adBotConfig = this.config.adBotConfig.map((obj) => ({ ...obj, token: '' })); }
   // removed stored messages API
   clearAdBots () {
     this.adBots.forEach(bot => bot.disconnect());
@@ -223,6 +224,7 @@ class BotStateManager {
     this.roomBotsTokens = [];
     this.adBotsQueue = [];
     this.channelUsersToMessageQueue.clear();
+    this.clearAdBotsTokens();
   }
 
   resetState () {

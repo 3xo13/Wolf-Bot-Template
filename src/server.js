@@ -41,7 +41,7 @@ io.on('connection', async (clientSocket) => {
     // console.log('Client connected:', clientSocket.id);
 
     clientSocket.on('init-api', async (request) => {
-      console.log('🚀 ~ request:', request);
+      // console.log('🚀 ~ request:', request);
       const config = {
         ...request,
         mainBotConfig: {

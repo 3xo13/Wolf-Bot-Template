@@ -63,7 +63,7 @@ export const handleAdAccountCommand = async (botManager, data) => {
     if (!botManager.config.adBotConfig.every(adBotConfig => adBotConfig.token)) {
       sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
-        `حساب الروومات رقم ( ${currentAdBotIndex + 1} ) متصل بنجاح
+        `حساب الاعلان رقم ( ${currentAdBotIndex + 1} ) متصل بنجاح
         يرجى إرسال "حساب اعلان" مع توكين الحساب رقم ( ${currentAdBotIndex + 2} )`,
         mainBot, mainBot
       );
@@ -75,7 +75,7 @@ export const handleAdAccountCommand = async (botManager, data) => {
 
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
-      `${adBotSteps.ad.description}\n${!shuldSkipSteps ? adBotSteps.ad.nextStepMessage : ''}`,
+      `حساب الإعلان رقم( ${currentAdBotIndex + 1} ) متصل بنجاح\n${!shuldSkipSteps ? adBotSteps.ad.nextStepMessage : ''}`,
       mainBot, mainBot
     );
 
