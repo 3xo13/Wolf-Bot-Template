@@ -23,7 +23,8 @@ export const handleAdRunCommand = async (botManager) => {
     }
     setStepState(botManager, 'messaging');
     await sendUpdateEvent(botManager, updateEvents.ad.start, { isOn: true });
-    await sendPrivateMessage(botManager.config.baseConfig.orderFrom, `${magicBotSteps.messaging.description}`, mainBot, mainBot);
+    await sendPrivateMessage(botManager.config.baseConfig.orderFrom, `${magicBotSteps.messaging.description}
+    ${magicBotSteps.messaging.nextStepMessage}`, mainBot, mainBot);
   } catch (error) {
     console.log('🚀 ~ handleAdRunCommand ~ error:', error);
     throw error;

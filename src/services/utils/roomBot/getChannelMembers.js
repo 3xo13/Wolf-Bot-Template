@@ -1,4 +1,4 @@
-export async function getChannelMembers (roomBot, channelId, listType = 'regular', limit = 100) {
+export async function getChannelMembers (botManager, roomBot, channelId, listType = 'regular', limit = 100) {
   if (!roomBot.connected) {
     throw new Error('Not connected');
   }
@@ -48,6 +48,9 @@ export async function getChannelMembers (roomBot, channelId, listType = 'regular
     let iterations = 0;
 
     while (totalFetched < limit && iterations < maxIterations) {
+      if (botManager.isReseting) {
+        break;
+      }
       iterations++;
       const remainingLimit = Math.min(pageSize, limit - totalFetched);
 

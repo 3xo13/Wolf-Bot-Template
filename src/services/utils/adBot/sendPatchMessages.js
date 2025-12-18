@@ -37,13 +37,10 @@ async function sendPatchMessages (botManager) {
     : botManager.getMessageCount() === 3
       ? botManager.config.baseConfig.multiMessageMillisecInterval || 0
       : 0;
-  console.log('🚀 ~ sendPatchMessages ~ waitTimeMilliseconds:', waitTimeMilliseconds);
 
   const accountsWaitTime = botManager.config.baseConfig.accountsMillisecInterval || 0;
-  console.log('🚀 ~ sendPatchMessages ~ accountsWaitTime:', accountsWaitTime);
 
   const betweenMessagesMillisecInterval = botManager.config.baseConfig.betweenMessagesMillisecInterval || 0;
-  console.log('🚀 ~ sendPatchMessages ~ betweenMessagesMillisecInterval:', betweenMessagesMillisecInterval);
 
   const {
     adBots,

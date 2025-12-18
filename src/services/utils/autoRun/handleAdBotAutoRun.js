@@ -21,7 +21,6 @@ export const handleAdBotAutoRun = async (botManager) => {
   const allTokensSet = adBotTokens.every(tokenConfig => tokenConfig.token);
   if (!allTokensSet) { throw new Error('All ad bot tokens must be configured'); }
   const messagingStyle = botManager.config.baseConfig.messagingStyle;
-  console.log('🚀 ~ handleAdBotAutoRun ~ messagingStyle:', messagingStyle);
   const messages = botManager.config.baseConfig.messages;
 
   try {
@@ -30,8 +29,9 @@ export const handleAdBotAutoRun = async (botManager) => {
     const instanceCount = botManager.config.baseConfig.instanceCount;
     for (let i = 0; i < adBotTokens.length; i++) {
       const tokenConfig = adBotTokens[i];
-      console.log('🚀 ~ handleAdBotAutoRun ~ tokenConfig:', tokenConfig);
-
+      if (botManager.isReseting) {
+        throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
+      }
       updateTimers(botManager, 'ad');
       // botManager.startAdBotsReconnectScheduler();
       // Connect the required number of ad bots
@@ -65,7 +65,6 @@ export const handleAdBotAutoRun = async (botManager) => {
     for (const message of messages) {
       await botManager.setMessage(message);
     }
-    console.log('messages : ', botManager.getMessages());
     setStepState(botManager, 'message');
     await handleAdRunCommand(botManager);
   } catch (error) {

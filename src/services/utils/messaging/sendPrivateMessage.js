@@ -58,7 +58,6 @@ export async function sendPrivateMessage (subscriberId, message, client, mainBot
       options
     );
 
-    console.log('🚀 ~ sendPrivateMessage ~ response:', response);
     return response;
   } catch (error) {
     console.error('Full error:', {

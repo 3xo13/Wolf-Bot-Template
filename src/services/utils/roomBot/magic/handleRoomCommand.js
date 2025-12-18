@@ -75,6 +75,9 @@ export const handleRoomCommand = async (token, botManager) => {
     // For magic bots, subscribe to audio slots for all channels
     if (botManager.getBotType() === 'magic') {
       for (const channelId of channelsIds) {
+        if (botManager.isReseting) {
+          throw new Error('عملية إعادة التعيين جارية، تم إلغاء الاشتراك في فتحات الصوت.');
+        }
         try {
           await newRoomBot.stage.slot.list(channelId);
         } catch (error) {

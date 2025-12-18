@@ -24,7 +24,6 @@ export const handleMagicBotAutoRun = async (botManager) => {
   const allTokensSet = adBotTokens.every(tokenConfig => tokenConfig.token);
   if (!allTokensSet) { throw new Error('All ad bot tokens must be configured'); }
   const messagingStyle = botManager.config.baseConfig.messagingStyle;
-  console.log('🚀 ~ handleAdBotAutoRun ~ messagingStyle:', messagingStyle);
   const messages = botManager.config.baseConfig.messages;
   try {
     setStepState(botManager, 'room');
@@ -44,6 +43,9 @@ export const handleMagicBotAutoRun = async (botManager) => {
     const roomBotChannelPairs = [];
 
     channelResults.forEach((channels, index) => {
+      if (botManager.isReseting) {
+        throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
+      }
       const channelsIds = channels.map(channel => channel.id);
       channelIds = channelIds.concat(channelsIds);
       channelsIds.forEach(channelId => {
@@ -64,8 +66,10 @@ export const handleMagicBotAutoRun = async (botManager) => {
     await sendUpdateEvent(botManager, updateEvents.channels.setup, { channels: channelIds });
     const instanceCount = botManager.config.baseConfig.instanceCount;
     for (let i = 0; i < adBotTokens.length; i++) {
+      if (botManager.isReseting) {
+        throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
+      }
       const tokenConfig = adBotTokens[i];
-      console.log('🚀 ~ handleAdBotAutoRun ~ tokenConfig:', tokenConfig);
 
       updateTimers(botManager, 'ad');
       // botManager.startAdBotsReconnectScheduler();

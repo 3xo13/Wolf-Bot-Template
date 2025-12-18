@@ -12,6 +12,7 @@ import { handleMessageCountCommand } from './adBot/handleMessageCountCommand.js'
 import handleShowMessagesCommand from './handleShowMessagesCommand.js';
 import handleMessagesChangeCommand from './handleMessagesChangeCommand.js';
 import handleHelpCommand from '../handleHelpCommand.js';
+import { userMessages } from './constants/userMessages.js';
 
 export const handleAdBotCommand = async (command, args) => {
   const { clientSocket, botManager } = args;
@@ -21,6 +22,14 @@ export const handleAdBotCommand = async (command, args) => {
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
       'يرجى الانتظار ...',
+      mainBot, mainBot
+    );
+    return;
+  }
+  if (botManager.isReseting) {
+    await sendPrivateMessage(
+      botManager.config.baseConfig.orderFrom,
+      userMessages.botIsBusyResetting,
       mainBot, mainBot
     );
     return;
@@ -70,10 +79,6 @@ export const handleAdBotCommand = async (command, args) => {
 
       case 'مساعده':
         await handleHelpCommand(botManager);
-        return;
-
-      case 'متابعه':
-        // Add the logic for the "متابعه" command here
         return;
 
       default:

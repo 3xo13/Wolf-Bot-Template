@@ -42,6 +42,9 @@ async function sendPatchMessages (botManager, patch) {
   try {
     // loop over the patch and send a message to the user from the bot and update the bot in queue
     for (let index = 0; index < patch.length; index++) {
+      if (botManager.isReseting) {
+        break;
+      }
       const { user: { userId }, bot } = patch[index];
       if (!botManager.getChannelUsers().length) {
         index = patch.length + 1;
@@ -75,6 +78,9 @@ async function sendPatchMessages (botManager, patch) {
         // Each bot sends three messages to each user in the patch
         if (bot && messages.length > 0) {
           for (let m = 0; m < messages.slice(0, 3).length; m++) {
+            if (botManager.isReseting) {
+              break;
+            }
             const message = messages[m];
             sendPrivateMessage(userId, message, bot.bot);
             // if (hasLink(message)) {
@@ -102,7 +108,6 @@ async function sendPatchMessages (botManager, patch) {
         throw new Error('Unsupported message count. Only 1 or 3 are allowed.');
       }
     }
-    console.log('🚀 ~ freeing bots...');
     patch.forEach(item => {
       if (botManager.isAdBotsTimerLessThanOneMinute()) {
         item.bot.bot.setIsBusy(true);
@@ -112,7 +117,6 @@ async function sendPatchMessages (botManager, patch) {
     });
   } catch (error) {
     console.error('Error sending patch messages:', error);
-    console.log('🚀 ~ freeing bots...');
     patch.forEach(item => {
       botManager.updateAdBotQueue(item.bot.id, { sending: false, lastUse: Date.now() });
     });

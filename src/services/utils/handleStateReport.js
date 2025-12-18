@@ -18,9 +18,9 @@ export const handleStateReport = async (botManager) => {
         isActive = true;
       }
     }
+    // 	إجمالي الأعضاء : ${state.users}
     const report = ` 
 		نوع البوت : ${state.botType === 'magic' ? 'السحري' : 'العادي'}
-		إجمالي الأعضاء : ${state.users}
 		عدد الاعلانات : ${state.adsSent + 1 || 0}
     حاله البوت : ${isActive ? 'يعمل' : 'متوقف'}`;
     await sendPrivateMessage(

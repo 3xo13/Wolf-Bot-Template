@@ -3,12 +3,15 @@ import { magicBotSteps } from '../../constants/magicBotSteps.js';
 import { updateEvents } from '../../constants/updateEvents.js';
 import { sendUpdateEvent } from '../../updates/sendUpdateEvent.js';
 
+function getRandomIndex (num) {
+  if (num <= 0) { return null; } // or throw an error
+  return Math.floor(Math.random() * num);
+}
+
 async function handleBotRotation (botManager) {
   const adBots = botManager.getAdBots();
   const adBotsQueue = botManager.adBotsQueue;
   const channelUsers = botManager.getChannelUsersToMessageQueue();
-  console.log('🚀 ~ handleBotRotation ~ channelUsersQueue:', channelUsers.length);
-  console.log('🚀 ~ handleBotRotation ~ adBotsQueue:', adBotsQueue.map(bot => ({ botId: bot.id, sending: bot.sending })));
 
   // sets initial ad bot objects on first message
   if (adBots.length > adBotsQueue.length) {
@@ -40,7 +43,6 @@ async function handleBotRotation (botManager) {
     }
     return null;
   }).filter(item => item !== null);
-  console.log('🚀 ~ handleBotRotation ~ usersPatch:', usersPatch.map(obj => ({ userId: obj.user.userId, bot: { id: obj.bot.id, sending: obj.bot.sending } })));
 
   await sendPatchMessages(botManager, usersPatch);
 }
@@ -69,6 +71,21 @@ export const handleGroupMessage = async (botManager, channelMessage) => {
 
     if (roomBotIds.includes(userId) || adBotIds.includes(userId)) {
       return; // Ignore messages from our own bots
+    }
+
+    const adBots = botManager.getAdBots();
+
+    const randomAdBotIndex = getRandomIndex(adBots.length);
+    if (!randomAdBotIndex && randomAdBotIndex !== 0) {
+      return;
+    }
+
+    const isPrivileged = await adBots[randomAdBotIndex].utility.subscriber.privilege.has(
+      channelMessage.sourceSubscriberId,
+      [512, 4096, 16384, 16777216, 33554432, 2, 536870912]
+    );
+    if (botManager.config.baseConfig.excludeAdmins && isPrivileged) {
+      return;
     }
 
     const timer = Date.now();

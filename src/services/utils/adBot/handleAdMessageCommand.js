@@ -12,7 +12,6 @@ import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 
 export const handleAdMessageCommand = async (botManager, command) => {
   const [commandName, data, ...rest] = command.body.split('\n');
-  console.log('🚀 ~ handleAdMessageCommand ~ command.body:', command.body);
   try {
     // Get the main bot and message count
     const mainBot = botManager.getMainBot();

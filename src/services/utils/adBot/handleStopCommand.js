@@ -8,7 +8,6 @@ import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 export const handleStopCommand = async (botManager) => {
   try {
     const mainBot = botManager.getMainBot();
-    console.log('🚀 ~ handleStopCommand ~ botManager.botType:', botManager.botType);
     if (botManager.botType === 'ad') {
       if (checkBotStep(botManager, 'sending')) {
         await botManager.clearState();

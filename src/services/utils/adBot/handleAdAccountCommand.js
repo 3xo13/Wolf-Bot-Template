@@ -37,7 +37,6 @@ export const handleAdAccountCommand = async (botManager, data) => {
     botManager.setAdBotToken(data, currentAdBotIndex);
     // Get the number of ad bot instances to create
     const instanceCount = botManager.config.baseConfig.instanceCount;
-    console.log('🚀 ~ handleCommand ~ instanceCount:', instanceCount);
 
     updateTimers(botManager, 'ad');
     // botManager.startAdBotsReconnectScheduler();

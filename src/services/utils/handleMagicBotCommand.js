@@ -13,10 +13,19 @@ import handleMessagesChangeCommand from './handleMessagesChangeCommand.js';
 import handleShowMessagesCommand from './handleShowMessagesCommand.js';
 import handleBotStepReplay from './steps/handleBotStepReplay.js';
 import handleHelpCommand from '../handleHelpCommand.js';
+import { userMessages } from './constants/userMessages.js';
 
 export const handleMagicBotCommand = async (command, args) => {
   const { clientSocket, botManager } = args;
   const mainBot = botManager.getMainBot();
+  if (botManager.isReseting) {
+    await sendPrivateMessage(
+      botManager.config.baseConfig.orderFrom,
+      userMessages.botIsBusyResetting,
+      mainBot, mainBot
+    );
+    return;
+  }
   try {
     const [commandName, data, ...rest] = command
       .body

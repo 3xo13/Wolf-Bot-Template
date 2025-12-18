@@ -84,10 +84,6 @@ export const handleDefaultCommand = async (botManager, command) => {
     // If more messages are needed, process the new message
     if (checkBotStep(botManager, 'message')) {
       if (messageCount > messagesLength) {
-        console.log(
-          '🚀 ~ handleAdBotCommand ~ messageCount > messagesLength:',
-          messageCount > messagesLength
-        );
         // Add the new message to the bot manager
         await botManager.setMessage(command.body);
         // Notify the client about the updated message setup

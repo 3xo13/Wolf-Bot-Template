@@ -11,7 +11,6 @@ const io = new Server(httpServer, {
 });
 
 io.on('connection', async (socket) => {
-  // console.log('Client connected:', socket.id);
   const loginRes = await client.login({
     token: 'WE-4da5dce4-0081-4bb7-8810-b850ffe2d981',
     host: '92.112.136.200',
@@ -27,7 +26,6 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('message', (data) => {
-    console.log('Received message:', data);
     socket.emit('message', { echo: data });
   });
 

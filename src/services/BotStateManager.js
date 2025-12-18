@@ -34,9 +34,10 @@ class BotStateManager {
     this.roomBotsReconnectTimer = null;
     this.adBotsReconnectTimer = null;
     this._mainBotSchedulerRef = null;
-    this.lastStep = 0;
     this.isPreparing = false;
     this.botType = config.baseConfig.botType || 'ad'; // 'ad' or 'magic'
+    this.isReseting = false;
+    this._destroyed = false; // Flag to indicate if the manager has been destroyed
   }
 
   // Set the socket connection instance
@@ -192,14 +193,22 @@ class BotStateManager {
   clearChannels () { this.channels.clear(); }
   clearMessages () { this.messages.clear(); }
   clearAdBotsTokens () { this.config.adBotConfig = this.config.adBotConfig.map((obj) => ({ ...obj, token: '' })); }
+
+  clearConfig () {
+    this.config.roomBotConfig.token = [];
+    this.config.baseConfig.autoRun = false;
+    this.clearAdBotsTokens();
+  }
+
   // removed stored messages API
-  clearAdBots () {
-    this.adBots.forEach(bot => bot.disconnect());
+  async clearAdBots () {
+    await Promise.all(this.adBots.map(bot => bot.disconnect()));
     this.adBots = [];
   }
 
-  clearRoomBots () {
-    this.roomBots.forEach(bot => bot.disconnect());
+  async clearRoomBots () {
+    // replace with parrallel disconnects
+    await Promise.all(this.roomBots.map(bot => bot.disconnect()));
     this.roomBots = [];
   }
 
@@ -211,12 +220,14 @@ class BotStateManager {
     this.resetState();
   }
 
-  clearState () {
-    this.messagesDeliverdeTo.clear();
-    this.clearRoomBots();
-    this.clearAdBots();
-    this.currentStep = 1;
+  async clearState () {
+    this.isReseting = true;
+    await (new Promise(resolve => setTimeout(resolve, 5000))); // wait for ongoing operations to finish
     this.users.clear();
+    await this.clearRoomBots();
+    await this.clearAdBots();
+    this.messagesDeliverdeTo.clear();
+    this.currentStep = 1;
     this.lastUserIndex = 0;
     this.channels.clear();
     this.channelUsers.clear();
@@ -224,10 +235,11 @@ class BotStateManager {
     this.roomBotsTokens = [];
     this.adBotsQueue = [];
     this.channelUsersToMessageQueue.clear();
-    this.clearAdBotsTokens();
+    this.clearConfig();
+    this.isReseting = false;
   }
 
-  resetState () {
+  async resetState () {
     // Stop any scheduled reconnects
     // try { this.stopMainBotReconnectScheduler(); } catch (e) { }
     // try { this.stopRoomBotsReconnectScheduler(); } catch (e) { }
@@ -245,7 +257,7 @@ class BotStateManager {
 
     // Disconnect and remove bot instances
     // try { if (this.mainBot && typeof this.mainBot.disconnect === 'function') { this.mainBot.disconnect(); } } catch (e) { }
-    this.clearState();
+    await this.clearState();
     this.messageCount = 0;
     this.messages.clear();
     this.messagesDeliverdeTo.clear();

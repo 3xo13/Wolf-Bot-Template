@@ -87,12 +87,14 @@ export const handlePrepareCommand = async (botManager) => {
       await botManager.clearRoomBots();
       await sendUpdateEvent(botManager, updateEvents.users.setup, { users: botManager.getUsers().length });
       // Notify user of next step
-      await sendPrivateMessage(
-        botManager.config.baseConfig.orderFrom,
-        `${adBotSteps.members.description}\n${adBotSteps.members.nextStepMessage}
-      `,
-        mainBot, mainBot
-      );
+      if (!botManager.isReseting) {
+        await sendPrivateMessage(
+          botManager.config.baseConfig.orderFrom,
+          `${adBotSteps.members.description}\n${adBotSteps.members.nextStepMessage}
+        `,
+          mainBot, mainBot
+        );
+      }
     } else {
       await botManager.clearRoomBots();
       await botManager.clearChannels();

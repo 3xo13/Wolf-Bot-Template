@@ -14,9 +14,12 @@ export const extractChannelMembers = async (roomBot, botManager, channelId) => {
     if (!roomBot.connected) {
       throw new Error('بوت الغرفة غير متصل');
     }
-
+    if (botManager.isReseting) {
+      throw new Error('البوت في وضع إعادة التعيين، لا يمكن استخراج المستخدمين الآن');
+    }
     try {
       const allMembers = await getAllChannelMembers(
+        botManager,
         roomBot,
         channelId,
         99999999
@@ -24,11 +27,13 @@ export const extractChannelMembers = async (roomBot, botManager, channelId) => {
 
       // In getUsersIDs.js
       if (allMembers?.allMembers?.length) {
-        console.log(`🔵 Starting to add ${allMembers.allMembers.length} members from channel ${channelId}`);
         allMembers.allMembers.forEach((member) => {
+          if (botManager.isReseting) {
+            console.log('Bot is resetting, stopping member extraction.');
+            return;
+          }
           botManager.addUser(member.id.toString());
         });
-        console.log(`🟢 Finished adding members from channel ${channelId}`);
       }
     } catch (error) {
       console.log(`❌ Channel ${channelId}: Failed to extract members -`, error.message);

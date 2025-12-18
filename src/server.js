@@ -106,7 +106,6 @@ io.on('connection', async (clientSocket) => {
 
     // Forward client events to API
     clientSocket.on('check-room-bot', (payload) => {
-      console.log('🚀 ~ clientApiMap:', clientApiMap.size);
       const manager = clientApiMap.get(clientSocket.botId);
       const isConnected = manager?.getRoomBots().some(bot => bot.connected);
       clientSocket.emit('bot-connection-state', { connected: isConnected, allBots: manager?.listAllBots() });

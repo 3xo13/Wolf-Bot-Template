@@ -4,6 +4,9 @@ import { handleMagicBotCommand } from '../utils/handleMagicBotCommand.js';
 import { handleGroupMessage } from '../utils/roomBot/magic/handleGroupMessage.js';
 
 export async function connectFn (manager, botType, adBotIndex) {
+  if (manager.isReseting) {
+    throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
+  }
   const { mainBotConfig, roomBotConfig, adBotConfig } = manager.config;
   let botInstance;
   switch (botType) {
@@ -61,6 +64,7 @@ export async function connectFn (manager, botType, adBotIndex) {
         // Listen for channel audio updates (voice messages, audio in stage)
         botInstance.on('channelAudioUpdate', async (update) => {
           try {
+            console.log("🚀 ~ connectFn ~ update:", update)
             await handleGroupMessage(manager, update);
           } catch (error) {
             console.error('Error handling channel audio update:', error);
@@ -84,8 +88,6 @@ export async function connectFn (manager, botType, adBotIndex) {
             console.error('Error handling group audio slot update:', error);
           }
         });
-
-        console.log(`✅ Room bot ${botInstance.currentSubscriber?.id} listening for channel messages and audio updates`);
       }
       break;
     }
