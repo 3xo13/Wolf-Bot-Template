@@ -81,7 +81,7 @@ export const handleGroupMessage = async (botManager, channelMessage) => {
     }
 
     const isPrivileged = await adBots[randomAdBotIndex].utility.subscriber.privilege.has(
-      channelMessage.sourceSubscriberId,
+      userId,
       [512, 4096, 16384, 16777216, 33554432, 2, 536870912]
     );
     if (botManager.config.baseConfig.excludeAdmins && isPrivileged) {

@@ -64,7 +64,6 @@ export async function connectFn (manager, botType, adBotIndex) {
         // Listen for channel audio updates (voice messages, audio in stage)
         botInstance.on('channelAudioUpdate', async (update) => {
           try {
-            console.log("🚀 ~ connectFn ~ update:", update)
             await handleGroupMessage(manager, update);
           } catch (error) {
             console.error('Error handling channel audio update:', error);
