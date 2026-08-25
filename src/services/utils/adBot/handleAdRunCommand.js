@@ -32,8 +32,13 @@ export const handleAdRunCommand = async (botManager) => {
       return;
     }
 
+    if (!botManager.config.baseConfig.autoRun &&
+      ['decision-required', 'retrying', 'classifying'].includes(botManager.classificationState)) {
+      throw new Error('يجب إنهاء فحص المستخدمين غير المعروفين أو تجاهلهم قبل تشغيل الحملة');
+    }
+
     // Validate that there are users to send ads to
-    if (!botManager.getUsers().length) {
+    if (!botManager.getUsers().length && !botManager.hasPendingClassification()) {
       throw new Error('لا يوجد مستخدمين في القائمة');
     }
     // Validate that there are ad bots connected

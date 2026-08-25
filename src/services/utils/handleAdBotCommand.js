@@ -18,7 +18,7 @@ export const handleAdBotCommand = async (command, args) => {
   const { clientSocket, botManager } = args;
   const mainBot = botManager.getMainBot();
   const [commandName, data, ...rest] = command.body.split('\n');
-  if (botManager.isPreparing && commandName !== 'اعاده تعيين البوت') {
+  if (botManager.isPreparing && !['اعاده تعيين البوت', 'اعادة فحص المستخدمين', 'تجاهل المستخدمين'].includes(commandName)) {
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
       'يرجى الانتظار ...',
@@ -36,6 +36,14 @@ export const handleAdBotCommand = async (command, args) => {
   }
   try {
     switch (commandName) {
+      case 'اعادة فحص المستخدمين':
+        await botManager.handleRetryUnknownUsers();
+        return;
+
+      case 'تجاهل المستخدمين':
+        await botManager.handleIgnoreUnknownUsers();
+        return;
+
       case 'حساب رومات':
         await handleRoomCommand(data, botManager);
         return;

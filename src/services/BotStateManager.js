@@ -8,6 +8,7 @@ import { runMainBotReconnectFn } from './BotStateManagerMethods/runMainBotReconn
 import { startGroupReconnectSchedulerFn } from './BotStateManagerMethods/startGroupReconnectScheduler.js';
 import { stopGroupReconnectSchedulerFn } from './BotStateManagerMethods/stopGroupReconnectScheduler.js';
 import { runGroupReconnectFn } from './BotStateManagerMethods/runGroupReconnect.js';
+import { handleIgnoreUnknownUsers, handleRetryUnknownUsers } from './utils/classification/unknownUsers.js';
 
 class BotStateManager {
   constructor (config) {
@@ -17,6 +18,24 @@ class BotStateManager {
     this.adBots = []; // Array of ad bot instances
     this.adBotsCount = this.config.adBotConfig.length || 0;
     this.users = new Set(); // Set of unique user IDs
+    this.eligibleUsers = this.users;
+    this.excludedUsers = new Set();
+    this.unknownUsers = new Set();
+    this.classifyingUsers = new Set();
+    this.seenUsers = new Set();
+    this.classificationQueue = [];
+    this.classificationQueueIndex = 0;
+    this.classificationInFlight = 0;
+    this.classificationProducers = 0;
+    this.classificationState = 'idle';
+    this.ignoreUnknownUsers = false;
+    this.slowRetryTimer = null;
+    this.slowRetryWake = null;
+    this.slowRetryPromise = null;
+    this.magicClassificationPromises = new Map();
+    this.magicUnknownRetryAt = new Map();
+    this._classificationGeneration = 0;
+    this._recipientWaiters = new Set();
     this.messagesDeliverdeTo = new Set(); // Set of user IDs to whom messages have been delivered
     this.lastUserIndex = 0;
     this.channels = new Map(); // Map of channelId -> channel info
@@ -38,6 +57,7 @@ class BotStateManager {
     this.botType = config.baseConfig.botType || 'ad'; // 'ad' or 'magic'
     this.isReseting = false;
     this._destroyed = false; // Flag to indicate if the manager has been destroyed
+    this._disconnectCleanupPromise = null;
   }
 
   // Set the socket connection instance
@@ -54,6 +74,8 @@ class BotStateManager {
 
   // Create and connect a new bot instance based on type
   async connect (botType, adBotIndex) { return connectFn(this, botType, adBotIndex); }
+  async handleRetryUnknownUsers () { return handleRetryUnknownUsers(this); }
+  async handleIgnoreUnknownUsers () { return handleIgnoreUnknownUsers(this); }
 
   // Getters for state
   getMainBot () { return this.mainBot; }
@@ -99,6 +121,110 @@ class BotStateManager {
   setChannel (channel) { this.channels.set(channel, channel); };
   setCurrentStep (step) { this.currentStep = step; };
   addUser (userId) { this.users.add(userId); };
+  enqueueCandidate (userId) {
+    const id = String(userId);
+    if (!id || this.seenUsers.has(id)) { return false; }
+    this.seenUsers.add(id);
+    if (!this.config.baseConfig.excludeAdmins) {
+      this.classifyUser(id, false);
+    } else {
+      this.classificationQueue.push(id);
+    }
+    this.signalRecipientChange();
+    return true;
+  }
+
+  takeClassificationPatch (size = 50, allowPartial = true) {
+    const start = this.classificationQueueIndex;
+    const available = this.classificationQueue.length - start;
+    if (available <= 0 || (!allowPartial && available < size)) { return []; }
+    const patch = this.classificationQueue.slice(start, start + size);
+    this.classificationQueueIndex += patch.length;
+    if (this.classificationQueueIndex > 10000 && this.classificationQueueIndex * 2 > this.classificationQueue.length) {
+      this.classificationQueue = this.classificationQueue.slice(this.classificationQueueIndex);
+      this.classificationQueueIndex = 0;
+    }
+    return patch;
+  }
+
+  classifyUser (userId, excluded) {
+    const id = String(userId);
+    this.unknownUsers.delete(id);
+    this.magicUnknownRetryAt.delete(id);
+    if (excluded) {
+      this.excludedUsers.add(id);
+      this.eligibleUsers.delete(id);
+    } else if (!this.excludedUsers.has(id)) {
+      this.eligibleUsers.add(id);
+    }
+    this.signalRecipientChange();
+  }
+
+  markUserUnknown (userId) {
+    const id = String(userId);
+    if (!this.eligibleUsers.has(id) && !this.excludedUsers.has(id)) { this.unknownUsers.add(id); }
+  }
+
+  getClassificationCounts () {
+    return { eligible: this.eligibleUsers.size, excluded: this.excludedUsers.size, unknown: this.unknownUsers.size };
+  }
+
+  emitClassificationStatus (state) {
+    if (state) { this.classificationState = state; }
+    this.emit('classification:status', { ...this.getClassificationCounts(), state: this.classificationState });
+  }
+
+  signalRecipientChange () {
+    for (const resolve of this._recipientWaiters) { resolve(); }
+    this._recipientWaiters.clear();
+  }
+
+  waitForRecipientChange (milliseconds = 1000) {
+    return new Promise(resolve => {
+      const done = () => { clearTimeout(timer); this._recipientWaiters.delete(done); resolve(); };
+      const timer = setTimeout(done, milliseconds);
+      this._recipientWaiters.add(done);
+    });
+  }
+
+  hasPendingClassification () {
+    return this.classificationInFlight > 0 ||
+      this.classificationQueueIndex < this.classificationQueue.length ||
+      (this.unknownUsers.size > 0 && !this.ignoreUnknownUsers && this.classificationState === 'retrying');
+  }
+
+  isClassificationCancelled (generation = this._classificationGeneration) {
+    return this.isReseting || this._destroyed || generation !== this._classificationGeneration;
+  }
+
+  cancelClassification () {
+    this._classificationGeneration++;
+    if (this.slowRetryTimer) { clearTimeout(this.slowRetryTimer); }
+    if (this.slowRetryWake) { this.slowRetryWake(); }
+    this.slowRetryTimer = null;
+    this.slowRetryWake = null;
+    this.slowRetryPromise = null;
+    this.magicClassificationPromises.clear();
+    this.magicUnknownRetryAt.clear();
+    this.signalRecipientChange();
+  }
+
+  clearClassificationState () {
+    this.cancelClassification();
+    this.users.clear();
+    this.excludedUsers.clear();
+    this.unknownUsers.clear();
+    this.classifyingUsers.clear();
+    this.seenUsers.clear();
+    this.classificationQueue = [];
+    this.classificationQueueIndex = 0;
+    this.classificationInFlight = 0;
+    this.classificationProducers = 0;
+    this.classificationState = 'idle';
+    this.ignoreUnknownUsers = false;
+    this.emitClassificationStatus('idle');
+  }
+
   setRoomBotToken (token) { this.config.roomBotConfig.token = token; };
   setAdBotToken (token, index) { this.config.adBotConfig[index].token = token; };
   setIsBusy (isBusy) { this.isBusy = isBusy; };
@@ -189,7 +315,7 @@ class BotStateManager {
   }
 
   // clear state
-  clearUsers () { this.users.clear(); }
+  clearUsers () { this.clearClassificationState(); }
   clearChannels () { this.channels.clear(); }
   clearMessages () { this.messages.clear(); }
   clearAdBotsTokens () { this.config.adBotConfig = this.config.adBotConfig.map((obj) => ({ ...obj, token: '' })); }
@@ -202,28 +328,39 @@ class BotStateManager {
 
   // removed stored messages API
   async clearAdBots () {
-    await Promise.all(this.adBots.map(bot => bot.disconnect()));
+    const bots = this.adBots;
     this.adBots = [];
+    await Promise.allSettled(bots.map(bot => bot.disconnect()));
   }
 
   async clearRoomBots () {
-    // replace with parrallel disconnects
-    await Promise.all(this.roomBots.map(bot => bot.disconnect()));
+    const bots = this.roomBots;
     this.roomBots = [];
+    await Promise.allSettled(bots.map(bot => bot.disconnect()));
   }
 
-  clearForDisconnectState () {
-    this.clearState();
+  async clearForDisconnectState () {
+    if (this._disconnectCleanupPromise) { return this._disconnectCleanupPromise; }
+    this._destroyed = true;
+    this.isReseting = true;
+    this.cancelClassification();
     this.messageCount = 0;
     this.messages.clear();
-    this.mainBot?.disconnect();
-    this.resetState();
+    this._disconnectCleanupPromise = (async () => {
+      await Promise.allSettled([
+        this.mainBot?.disconnect(),
+        this.clearRoomBots(),
+        this.clearAdBots()
+      ].filter(Boolean));
+      await this.resetState();
+    })();
+    return this._disconnectCleanupPromise;
   }
 
   async clearState () {
     this.isReseting = true;
-    await (new Promise(resolve => setTimeout(resolve, 5000))); // wait for ongoing operations to finish
-    this.users.clear();
+    this.cancelClassification();
+    this.clearClassificationState();
     await this.clearRoomBots();
     await this.clearAdBots();
     this.messagesDeliverdeTo.clear();

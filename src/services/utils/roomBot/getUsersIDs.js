@@ -18,23 +18,19 @@ export const extractChannelMembers = async (roomBot, botManager, channelId) => {
       throw new Error('البوت في وضع إعادة التعيين، لا يمكن استخراج المستخدمين الآن');
     }
     try {
-      const allMembers = await getAllChannelMembers(
+      await getAllChannelMembers(
         botManager,
         roomBot,
         channelId,
-        99999999
-      );
-
-      // In getUsersIDs.js
-      if (allMembers?.allMembers?.length) {
-        allMembers.allMembers.forEach((member) => {
-          if (botManager.isReseting) {
-            console.log('Bot is resetting, stopping member extraction.');
-            return;
+        99999999,
+        async (members) => {
+          for (const member of members) {
+            if (botManager.isReseting) { return; }
+            if (member?.id) { botManager.enqueueCandidate(member.id); }
           }
-          botManager.addUser(member.id.toString());
-        });
-      }
+        },
+        false
+      );
     } catch (error) {
       console.log(`❌ Channel ${channelId}: Failed to extract members -`, error.message);
       throw error;

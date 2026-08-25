@@ -45,8 +45,6 @@ async function sendPatchMessages (botManager) {
   const {
     adBots,
     messageCount,
-    users,
-    messagesDeliveredTo,
     lastUserIndex,
     setMessagesDeliveredTo,
     setLastUserIndex
@@ -56,10 +54,14 @@ async function sendPatchMessages (botManager) {
   const patchSize = adBots.length;
 
   try {
-    while (currentIndex < users.length) {
-      if (!botManager.getUsers().length) {
-        currentIndex = users.length + 1;
-        return;
+    while (!botManager.isReseting) {
+      const users = botManager.getUsers();
+      if (currentIndex >= users.length) {
+        if (botManager.hasPendingClassification()) {
+          await botManager.waitForRecipientChange(1000);
+          continue;
+        }
+        break;
       }
       let patchUsers = [];
       if (patchSize >= users.length - currentIndex) {
@@ -77,11 +79,8 @@ async function sendPatchMessages (botManager) {
             sendUpdateEvent(botManager, updateEvents.ad.update, {
               adsSent: currentIndex + i + 1
             });
-            setLastUserIndex(currentIndex + i);
-            setMessagesDeliveredTo([
-              ...messagesDeliveredTo,
-              userId
-            ]);
+            setLastUserIndex(currentIndex + i + 1);
+            setMessagesDeliveredTo([userId]);
             const message = messages[0];
             sendPrivateMessage(userId, message, bot);
             // if (hasLink(text)) {
@@ -95,7 +94,7 @@ async function sendPatchMessages (botManager) {
           }
         }
 
-        currentIndex += patchSize;
+        currentIndex += patchUsers.length;
         await waitMilliseconds(waitTimeMilliseconds);
         if (botManager.isAdBotsTimerLessThanOneMinute()) {
           adBots.forEach(bot => {
@@ -129,16 +128,13 @@ async function sendPatchMessages (botManager) {
             }
             await waitMilliseconds(accountsWaitTime);
           }
-          setMessagesDeliveredTo([
-            ...messagesDeliveredTo,
-            userId
-          ]);
-          setLastUserIndex(currentIndex + i);
+          setMessagesDeliveredTo([userId]);
+          setLastUserIndex(currentIndex + i + 1);
           sendUpdateEvent(botManager, updateEvents.ad.update, {
             adsSent: currentIndex + i + 1
           });
         }
-        currentIndex += patchSize;
+        currentIndex += patchUsers.length;
 
         await waitMilliseconds(waitTimeMilliseconds);
         if (botManager.isAdBotsTimerLessThanOneMinute()) {

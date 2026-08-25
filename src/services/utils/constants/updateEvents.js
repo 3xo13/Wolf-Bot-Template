@@ -29,6 +29,9 @@ export const updateEvents = {
     setup: 'users:setup',
     delete: 'users:delete'
   },
+  classification: {
+    status: 'classification:status'
+  },
   state: {
     clear: 'state:clear',
     reset: 'state:reset'

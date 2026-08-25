@@ -1,4 +1,4 @@
-export async function getChannelMembers (botManager, roomBot, channelId, listType = 'regular', limit = 100) {
+export async function getChannelMembers (botManager, roomBot, channelId, listType = 'regular', limit = 100, onPage = null, collect = true) {
   if (!roomBot.connected) {
     throw new Error('Not connected');
   }
@@ -82,7 +82,8 @@ export async function getChannelMembers (botManager, roomBot, channelId, listTyp
           break;
         }
 
-        allMembers.push(...members);
+        if (collect) { allMembers.push(...members); }
+        if (onPage) { await onPage(members, listType); }
         totalFetched += members.length;
 
         // Set 'after' to the last member's ID for next iteration
@@ -110,7 +111,7 @@ export async function getChannelMembers (botManager, roomBot, channelId, listTyp
       success: true,
       code: 200,
       body: allMembers,
-      totalMembers: allMembers.length,
+      totalMembers: totalFetched,
       paginationInfo: {
         totalFetched,
         iterations,
@@ -131,10 +132,13 @@ export async function getChannelMembers (botManager, roomBot, channelId, listTyp
     body.offset = 0;
   }
 
-  return roomBot.websocket.emit(config.command, {
+  const response = await roomBot.websocket.emit(config.command, {
     headers: {
       version: config.version
     },
     body
   });
+  const members = Array.isArray(response?.body) ? response.body : [];
+  if (onPage) { await onPage(members, listType); }
+  return collect ? response : { ...response, body: [], totalMembers: members.length };
 }

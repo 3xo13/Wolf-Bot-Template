@@ -4,7 +4,6 @@ import { Server as SoketIOServer } from 'socket.io';
 import BotStateManager from './services/BotStateManager.js';
 import { handleAutoRun } from './services/utils/autoRun/handleAutoRun.js';
 import { updateEvents } from './services/utils/constants/updateEvents.js';
-import { sendUpdateEvent } from './services/utils/updates/sendUpdateEvent.js';
 const app = express();
 const PORT = 3000;
 
@@ -35,6 +34,23 @@ const io = new SoketIOServer(server, {
 });
 
 const clientApiMap = new Map();
+const clientCleanupMap = new Map();
+
+async function cleanupClient (clientSocket) {
+  if (clientSocket.cleanupPromise) { return clientSocket.cleanupPromise; }
+  const botId = clientSocket.botId;
+  const manager = botId ? clientApiMap.get(botId) : null;
+  if (botId && clientApiMap.get(botId) === manager) { clientApiMap.delete(botId); }
+
+  const cleanupPromise = (async () => {
+    if (manager) { await manager.clearForDisconnectState(); }
+  })().finally(() => {
+    if (botId && clientCleanupMap.get(botId) === cleanupPromise) { clientCleanupMap.delete(botId); }
+  });
+  clientSocket.cleanupPromise = cleanupPromise;
+  if (botId) { clientCleanupMap.set(botId, cleanupPromise); }
+  return cleanupPromise;
+}
 
 io.on('connection', async (clientSocket) => {
   try {
@@ -83,6 +99,10 @@ io.on('connection', async (clientSocket) => {
         return clientSocket.disconnect(true);
       }
 
+      const pendingCleanup = clientCleanupMap.get(botId);
+      if (pendingCleanup) { await pendingCleanup; }
+      if (!clientSocket.connected) { return; }
+
       // Reject if there is already a connection for this botId
       if (clientApiMap.has(botId)) {
         console.warn(`Connection attempt rejected: botId ${botId} is already connected`);
@@ -91,10 +111,20 @@ io.on('connection', async (clientSocket) => {
       }
       const wolfStateManager = new BotStateManager(config);
       wolfStateManager.setSocket(clientSocket);
-      await wolfStateManager.connect('main');
-      clientApiMap.set(botId, wolfStateManager);
-      // attach botId to socket so other handlers can reference the correct map key
       clientSocket.botId = botId;
+      clientApiMap.set(botId, wolfStateManager);
+      try {
+        await wolfStateManager.connect('main');
+      } catch (error) {
+        console.error(`Failed to initialize botId ${botId}:`, error);
+        await cleanupClient(clientSocket);
+        if (clientSocket.connected) { clientSocket.disconnect(true); }
+        return;
+      }
+      if (!clientSocket.connected || wolfStateManager._destroyed) {
+        await cleanupClient(clientSocket);
+        return;
+      }
       // console.log("🚀 ~ botId:", botId)
       if (request?.baseConfig?.autoRun) {
         await handleAutoRun(wolfStateManager);
@@ -105,11 +135,21 @@ io.on('connection', async (clientSocket) => {
     }); // When creating the WolfClient instance
 
     // Forward client events to API
-    clientSocket.on('check-room-bot', (payload) => {
+    clientSocket.on('check-room-bot', (_payload) => {
       const manager = clientApiMap.get(clientSocket.botId);
       const isConnected = manager?.getRoomBots().some(bot => bot.connected);
       clientSocket.emit('bot-connection-state', { connected: isConnected, allBots: manager?.listAllBots() });
       // clientApiMap.get(clientSocket.id)?.getMa
+    });
+
+    clientSocket.on('classification:retry', async () => {
+      const manager = clientApiMap.get(clientSocket.botId);
+      if (manager) { await manager.handleRetryUnknownUsers(); }
+    });
+
+    clientSocket.on('classification:ignore', async () => {
+      const manager = clientApiMap.get(clientSocket.botId);
+      if (manager) { await manager.handleIgnoreUnknownUsers(); }
     });
 
     // clientSocket.on("stop-bots", async () => {
@@ -118,21 +158,19 @@ io.on('connection', async (clientSocket) => {
     // });
 
     // Disconnect on error
-    clientSocket.on('error', (err) => {
+    clientSocket.on('error', async (err) => {
       console.error('Socket error:', err);
+      if (clientSocket.cleaningUp) { return; }
+      clientSocket.cleaningUp = true;
       clientSocket.disconnect();
-      const manager = clientApiMap.get(clientSocket.botId);
-      manager?.clearForDisconnectState();
-      if (clientSocket.botId) { clientApiMap.delete(clientSocket.botId); }
+      await cleanupClient(clientSocket);
     });
 
     // Cleanup on disconnect
     clientSocket.on('disconnect', async () => {
-      const manager = clientApiMap.get(clientSocket.botId);
-      manager?.clearForDisconnectState();
-      await sendUpdateEvent(manager, updateEvents.state.clear, { state: 'disconnected' });
-      clientSocket.disconnect();
-      if (clientSocket.botId) { clientApiMap.delete(clientSocket.botId); }
+      if (clientSocket.cleaningUp) { return; }
+      clientSocket.cleaningUp = true;
+      await cleanupClient(clientSocket);
     });
   } catch (error) {
     console.log('🚀 ~ error:', error);

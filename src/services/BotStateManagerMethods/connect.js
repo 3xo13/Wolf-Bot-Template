@@ -44,7 +44,7 @@ export async function connectFn (manager, botType, adBotIndex) {
         // Listen for channel/group messages (text messages)
         botInstance.on('channelMessage', async (message) => {
           try {
-            await handleGroupMessage(manager, message);
+            await handleGroupMessage(manager, message, botInstance);
           } catch (error) {
             console.error('Error handling channel message:', error);
           }
@@ -54,7 +54,7 @@ export async function connectFn (manager, botType, adBotIndex) {
         botInstance.on('message', async (message) => {
           try {
             if (message.isGroup) {
-              await handleGroupMessage(manager, message);
+              await handleGroupMessage(manager, message, botInstance);
             }
           } catch (error) {
             console.error('Error handling group message:', error);
@@ -64,7 +64,7 @@ export async function connectFn (manager, botType, adBotIndex) {
         // Listen for channel audio updates (voice messages, audio in stage)
         botInstance.on('channelAudioUpdate', async (update) => {
           try {
-            await handleGroupMessage(manager, update);
+            await handleGroupMessage(manager, update, botInstance);
           } catch (error) {
             console.error('Error handling channel audio update:', error);
           }
@@ -73,7 +73,7 @@ export async function connectFn (manager, botType, adBotIndex) {
         // Listen for channel audio slot updates
         botInstance.on('channelAudioSlotUpdate', async (update) => {
           try {
-            await handleGroupMessage(manager, update);
+            await handleGroupMessage(manager, update, botInstance);
           } catch (error) {
             console.error('Error handling channel audio slot update:', error);
           }
@@ -82,7 +82,7 @@ export async function connectFn (manager, botType, adBotIndex) {
         // Listen for group audio slot updates (has subscriberId)
         botInstance.on('groupAudioSlotUpdate', async (update) => {
           try {
-            await handleGroupMessage(manager, update);
+            await handleGroupMessage(manager, update, botInstance);
           } catch (error) {
             console.error('Error handling group audio slot update:', error);
           }

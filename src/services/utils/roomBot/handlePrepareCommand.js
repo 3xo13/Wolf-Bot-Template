@@ -1,7 +1,3 @@
-
-// This module handles the preparation step for room bots in the workflow.
-// It connects room bots to channels, extracts channel members, and updates botManager state.
-// Used during step 2 of the bot workflow to gather all members from all channels.
 import { adBotSteps } from '../constants/adBotSteps.js';
 import { updateEvents } from '../constants/updateEvents.js';
 import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js';
@@ -10,104 +6,174 @@ import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 import { extractChannelMembers } from './getUsersIDs.js';
 import { checkBotStep } from '../steps/checkBotStep.js';
 import handleBotStepReplay from '../steps/handleBotStepReplay.js';
+import { classifySubscriberPatch } from '../classification/classifySubscribers.js';
+import { reportAutoClassification, reportUnknownDecision, startSlowUnknownRetry } from '../classification/unknownUsers.js';
 
-/**
- * Prepares room bots by connecting them to channels and extracting members.
- * BotStateManager botManager - The central state manager for all bots and workflow.
- */
+async function classificationWorker (botManager, roomBot, generation) {
+  while (!botManager.isClassificationCancelled(generation)) {
+    const patch = botManager.takeClassificationPatch(50, botManager.classificationProducers <= 0);
+    if (patch.length) {
+      botManager.classificationInFlight++;
+      try {
+        await classifySubscriberPatch(botManager, roomBot, patch);
+      } finally {
+        botManager.classificationInFlight--;
+      }
+      continue;
+    }
+    if (botManager.classificationProducers <= 0) { return; }
+    await botManager.waitForRecipientChange(100);
+  }
+}
+
+async function fetchAndClassify (botManager, roomBot, channelId, generation) {
+  try {
+    await extractChannelMembers(roomBot, botManager, channelId);
+  } finally {
+    botManager.classificationProducers--;
+    botManager.signalRecipientChange();
+  }
+  if (botManager.config.baseConfig.excludeAdmins) {
+    await classificationWorker(botManager, roomBot, generation);
+  }
+}
+
+async function fetchOnly (botManager, roomBot, channelId) {
+  try {
+    await extractChannelMembers(roomBot, botManager, channelId);
+  } finally {
+    botManager.classificationProducers--;
+    botManager.signalRecipientChange();
+  }
+}
+
+export function getLowRoomClassificationWorkerCount (roomCount, userCount) {
+  if (roomCount >= 3 || userCount <= 5000) { return 0; }
+  return userCount < 50000 ? 3 : 5;
+}
+
+async function runLowRoomPipeline (botManager, producerBots, channels, estimatedUsers, generation) {
+  const classificationBots = [];
+  const workerTasks = [];
+
+  const scaleWorkers = async (userCount) => {
+    const target = getLowRoomClassificationWorkerCount(channels.length, userCount);
+    const missing = target - classificationBots.length;
+    if (missing <= 0) { return; }
+    const connected = await Promise.all(Array.from({ length: missing }, () => botManager.connect('room')));
+    classificationBots.push(...connected);
+    connected.forEach(bot => workerTasks.push(classificationWorker(botManager, bot, generation)));
+  };
+
+  // Channel metadata lets large one/two-room campaigns start classifiers before extraction.
+  await scaleWorkers(estimatedUsers);
+  const extractionTask = Promise.allSettled(channels.map((channelId, index) =>
+    fetchOnly(botManager, producerBots[index], channelId)
+  ));
+
+  while (botManager.classificationProducers > 0 && !botManager.isClassificationCancelled(generation)) {
+    await scaleWorkers(botManager.seenUsers.size);
+    await botManager.waitForRecipientChange(100);
+  }
+  await scaleWorkers(botManager.seenUsers.size);
+
+  const extractionResults = await extractionTask;
+  const extractionFailure = extractionResults.find(result => result.status === 'rejected');
+  if (extractionFailure) { throw extractionFailure.reason; }
+
+  if (!classificationBots.length) {
+    producerBots.forEach(bot => workerTasks.push(classificationWorker(botManager, bot, generation)));
+  }
+  const workerResults = await Promise.allSettled(workerTasks);
+  const workerFailure = workerResults.find(result => result.status === 'rejected');
+  if (workerFailure) { throw workerFailure.reason; }
+}
+
 export const handlePrepareCommand = async (botManager) => {
   botManager.setIsBusy(true);
-  // Get main bot and first room bot
   const mainBot = botManager.getMainBot();
   try {
-    const roomBot = botManager.getRoomBots()[0];
-
-    if (!checkBotStep(botManager, 'room') || !botManager.getRoomBots().length) {
+    const initialRoomBot = botManager.getRoomBots()[0];
+    if (!checkBotStep(botManager, 'room') || !initialRoomBot) {
       await handleBotStepReplay(botManager);
       return;
     }
-
-    // Check if room bot is connected and authenticated
-    if (!roomBot.connected || !roomBot.currentSubscriber) {
-      roomBot.disconnect();
-      throw new Error('بوت الرووم غير متصل\nيرجى تغيير الحساب');
+    if (!initialRoomBot.connected || !initialRoomBot.currentSubscriber) {
+      await initialRoomBot.disconnect();
+      throw new Error('بوت الرومات غير متصل، يرجى تغيير الحساب');
     }
 
     botManager.isPreparing = true;
-    await sendPrivateMessage(
-      botManager.config.baseConfig.orderFrom,
-      'جاري التجهيز...',
-      mainBot, mainBot
-    );
+    botManager.clearClassificationState();
+    botManager.emitClassificationStatus('classifying');
+    await sendPrivateMessage(botManager.config.baseConfig.orderFrom, 'جاري التجهيز...', mainBot, mainBot);
 
-    // mark all room bots as working
-    botManager.getRoomBots().forEach(bot => bot.setIsWorking(true));
-
-    // Get all channel IDs from botManager
     const channels = botManager.getChannels();
+    const channelProfiles = await initialRoomBot.channel.list();
+    const channelIds = new Set(channels.map(String));
+    const estimatedUsers = channelProfiles
+      .filter(channel => channelIds.has(String(channel.id)))
+      .reduce((total, channel) => total + (Number(channel.membersCount) || 0), 0);
+    const additionalProducers = await Promise.all(
+      Array.from({ length: Math.max(0, channels.length - 1) }, () => botManager.connect('room'))
+    );
+    const producerBots = [initialRoomBot, ...additionalProducers];
+    if (producerBots.length !== channels.length) { throw new Error('تعذر تخصيص بوت واحد لكل غرفة'); }
 
-    // Connect a room bot to each channel
-    await Promise.all(channels.map(channelId => botManager.connect('room')));
+    await Promise.all(additionalProducers.map(bot => bot.channel.list().catch(error => {
+      console.warn('Failed to initialize room bot:', error.message);
+    })));
 
-    // Get all connected room bots
-    const roomBots = botManager.getRoomBots();
+    const generation = botManager._classificationGeneration;
+    botManager.classificationProducers = channels.length;
+    if (botManager.config.baseConfig.excludeAdmins && channels.length < 3) {
+      await runLowRoomPipeline(botManager, producerBots, channels, estimatedUsers, generation);
+    } else {
+      const results = await Promise.allSettled(channels.map((channelId, index) =>
+        fetchAndClassify(botManager, producerBots[index], channelId, generation)
+      ));
+      const failed = results.find(result => result.status === 'rejected');
+      if (failed) { throw failed.reason; }
+    }
 
-    // Pair each channel with its corresponding room bot
-    const channelBotPairs = channels.map((channelId, index) => ([
-      channelId, roomBots[index]
-    ]));
+    // Extraction is complete; classified sets now provide all deduplication we need.
+    botManager.seenUsers.clear();
+    botManager.classificationQueue = [];
+    botManager.classificationQueueIndex = 0;
 
-    // Initialize each room bot by fetching its channel list
-    // This populates the inChannel flag for channels the bot is already in
-    await Promise.all(roomBots.map(async (bot) => {
-      try {
-        await bot.channel.list();
-      } catch (error) {
-        console.log('⚠️ Failed to initialize bot:', error.message);
+    setStepState(botManager, 'members');
+    botManager.clearChannels();
+    await sendUpdateEvent(botManager, updateEvents.users.setup, { users: botManager.getUsers().length });
+
+    if (botManager.unknownUsers.size) {
+      while (botManager.getRoomBots().length > 1) {
+        const bot = botManager.getRoomBots().at(-1);
+        botManager.roomBots = botManager.getRoomBots().slice(0, -1);
+        await bot.disconnect();
       }
-    }));
-
-    // Extract members from each channel using its room bot
-    const result = await Promise.all(channelBotPairs.map(async ([channelId, bot]) => {
-      try {
-        const extractResult = await extractChannelMembers(bot, botManager, channelId);
-        return extractResult;
-      } catch (error) {
-        console.log(`❌ Failed to extract members from channel ${channelId}:`, error.message);
-        return false;
-      }
-    }));
-
-    // If extraction succeeded, update state and notify user
-    if (result) {
-      setStepState(botManager, 'members');
-      console.log('✅ Total users extracted:', botManager.getUsers().length);
-      // Disconnect all room bots after extraction
-      await botManager.clearChannels();
-      await botManager.clearRoomBots();
-      await sendUpdateEvent(botManager, updateEvents.users.setup, { users: botManager.getUsers().length });
-      // Notify user of next step
-      if (!botManager.isReseting) {
-        await sendPrivateMessage(
-          botManager.config.baseConfig.orderFrom,
-          `${adBotSteps.members.description}\n${adBotSteps.members.nextStepMessage}
-        `,
-          mainBot, mainBot
-        );
+      if (botManager.config.baseConfig.autoRun) {
+        await reportAutoClassification(botManager);
+        startSlowUnknownRetry(botManager);
+      } else {
+        await reportUnknownDecision(botManager);
       }
     } else {
+      botManager.emitClassificationStatus('idle');
       await botManager.clearRoomBots();
-      await botManager.clearChannels();
-      throw new Error('لم يتم استخراج الاعضاء, يرجى المحاولة مجددا');
+    }
+
+    if (!botManager.isReseting) {
+      await sendPrivateMessage(
+        botManager.config.baseConfig.orderFrom,
+        `${adBotSteps.members.description}\n${adBotSteps.members.nextStepMessage}`,
+        mainBot,
+        mainBot
+      );
     }
   } catch (error) {
-    // Log and throw error if preparation fails
-    console.log('🚀 ~ handlePrepareCommand ~ error:', error);
-    await sendPrivateMessage(
-      botManager.config.baseConfig.orderFrom,
-      'فشل في تجهيز بوت الغرفة, يرجى المحاولة مجددا',
-      mainBot, mainBot
-    );
+    console.error('handlePrepareCommand failed:', error);
+    await botManager.clearRoomBots();
+    await sendPrivateMessage(botManager.config.baseConfig.orderFrom, 'فشل تجهيز بوت الغرفة، يرجى المحاولة مجدداً', mainBot, mainBot);
     throw error;
   } finally {
     botManager.setIsBusy(false);

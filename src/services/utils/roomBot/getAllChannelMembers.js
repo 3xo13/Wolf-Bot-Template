@@ -4,21 +4,21 @@ export async function getAllChannelMembers (
   botManager,
   roomBot,
   channelId,
-  limit = 100
+  limit = 100,
+  onPage = null,
+  collect = true
 ) {
   if (!roomBot.connected) {
     throw new Error('Not connected');
   }
 
   const memberTypes = [
+    'privileged',
     'regular',
     'silenced',
     'banned',
     'bots'
   ];
-  if (!botManager.config.baseConfig.excludeAdmins) {
-    memberTypes.unshift('privileged');
-  }
   const membersByType = {
     privileged: [],
     regular: [],
@@ -31,7 +31,7 @@ export async function getAllChannelMembers (
   try {
     // Fetch all member types in parallel for faster extraction
     const results = await Promise.allSettled(
-      memberTypes.map(type => getChannelMembers(botManager, roomBot, channelId, type, limit))
+      memberTypes.map(type => getChannelMembers(botManager, roomBot, channelId, type, limit, onPage, collect))
     );
 
     // Process results
@@ -42,14 +42,14 @@ export async function getAllChannelMembers (
       }
       if (result.status === 'fulfilled') {
         const members = Array.isArray(result.value.body) ? result.value.body : [];
-        membersByType[type] = members;
+        membersByType[type] = collect ? members : [];
         // if (type === 'privileged') {
         //   console.log(`Channel: ${channelId}`);
         //   console.log('Privileged members: ', members);
         // }
 
         // Add to unique members map to avoid duplicates
-        if (Array.isArray(members)) {
+        if (collect && Array.isArray(members)) {
           members.forEach((member) => {
             if (member && member.id) {
               uniqueMembers.set(member.id, {
