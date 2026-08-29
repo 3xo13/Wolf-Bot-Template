@@ -54,6 +54,7 @@ class BotStateManager {
     this.adBotsReconnectTimer = null;
     this._mainBotSchedulerRef = null;
     this.isPreparing = false;
+    this._activePreparationGeneration = null;
     this.botType = config.baseConfig.botType || 'ad'; // 'ad' or 'magic'
     this.isReseting = false;
     this._destroyed = false; // Flag to indicate if the manager has been destroyed
@@ -352,12 +353,12 @@ class BotStateManager {
         this.clearRoomBots(),
         this.clearAdBots()
       ].filter(Boolean));
-      await this.resetState();
+      await this.clearState({ terminal: true });
     })();
     return this._disconnectCleanupPromise;
   }
 
-  async clearState () {
+  async clearState ({ terminal = false } = {}) {
     this.isReseting = true;
     this.cancelClassification();
     this.clearClassificationState();
@@ -373,7 +374,11 @@ class BotStateManager {
     this.adBotsQueue = [];
     this.channelUsersToMessageQueue.clear();
     this.clearConfig();
+    this.isPreparing = false;
+    this._activePreparationGeneration = null;
+    this.isBusy = false;
     this.isReseting = false;
+    if (!terminal) { this._disconnectCleanupPromise = null; }
   }
 
   async resetState () {
@@ -410,8 +415,7 @@ class BotStateManager {
     this.channelUsersToMessageQueue.clear();
     this.roomBotsTokens = [];
     this.config.adBotConfig = this.config.adBotConfig.map((obj) => ({ ...obj, token: '' }));
-    // mark destroyed so future callbacks can no-op
-    this._destroyed = true;
+    // A command reset keeps the manager, main bot and control socket reusable.
   }
 
   // getState

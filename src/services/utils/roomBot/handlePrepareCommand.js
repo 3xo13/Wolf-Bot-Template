@@ -17,7 +17,9 @@ async function classificationWorker (botManager, roomBot, generation) {
       try {
         await classifySubscriberPatch(botManager, roomBot, patch);
       } finally {
-        botManager.classificationInFlight--;
+        if (!botManager.isClassificationCancelled(generation)) {
+          botManager.classificationInFlight--;
+        }
       }
       continue;
     }
@@ -28,9 +30,11 @@ async function classificationWorker (botManager, roomBot, generation) {
 
 async function fetchAndClassify (botManager, roomBot, channelId, generation) {
   try {
-    await extractChannelMembers(roomBot, botManager, channelId);
+    await extractChannelMembers(roomBot, botManager, channelId, generation);
   } finally {
-    botManager.classificationProducers--;
+    if (!botManager.isClassificationCancelled(generation)) {
+      botManager.classificationProducers--;
+    }
     botManager.signalRecipientChange();
   }
   if (botManager.config.baseConfig.excludeAdmins) {
@@ -38,11 +42,13 @@ async function fetchAndClassify (botManager, roomBot, channelId, generation) {
   }
 }
 
-async function fetchOnly (botManager, roomBot, channelId) {
+async function fetchOnly (botManager, roomBot, channelId, generation) {
   try {
-    await extractChannelMembers(roomBot, botManager, channelId);
+    await extractChannelMembers(roomBot, botManager, channelId, generation);
   } finally {
-    botManager.classificationProducers--;
+    if (!botManager.isClassificationCancelled(generation)) {
+      botManager.classificationProducers--;
+    }
     botManager.signalRecipientChange();
   }
 }
@@ -68,7 +74,7 @@ async function runLowRoomPipeline (botManager, producerBots, channels, estimated
   // Channel metadata lets large one/two-room campaigns start classifiers before extraction.
   await scaleWorkers(estimatedUsers);
   const extractionTask = Promise.allSettled(channels.map((channelId, index) =>
-    fetchOnly(botManager, producerBots[index], channelId)
+    fetchOnly(botManager, producerBots[index], channelId, generation)
   ));
 
   while (botManager.classificationProducers > 0 && !botManager.isClassificationCancelled(generation)) {
@@ -92,6 +98,7 @@ async function runLowRoomPipeline (botManager, producerBots, channels, estimated
 export const handlePrepareCommand = async (botManager) => {
   botManager.setIsBusy(true);
   const mainBot = botManager.getMainBot();
+  let generation = null;
   try {
     const initialRoomBot = botManager.getRoomBots()[0];
     if (!checkBotStep(botManager, 'room') || !initialRoomBot) {
@@ -105,6 +112,8 @@ export const handlePrepareCommand = async (botManager) => {
 
     botManager.isPreparing = true;
     botManager.clearClassificationState();
+    generation = botManager._classificationGeneration;
+    botManager._activePreparationGeneration = generation;
     botManager.emitClassificationStatus('classifying');
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, 'جاري التجهيز...', mainBot, mainBot);
 
@@ -124,7 +133,6 @@ export const handlePrepareCommand = async (botManager) => {
       console.warn('Failed to initialize room bot:', error.message);
     })));
 
-    const generation = botManager._classificationGeneration;
     botManager.classificationProducers = channels.length;
     if (botManager.config.baseConfig.excludeAdmins && channels.length < 3) {
       await runLowRoomPipeline(botManager, producerBots, channels, estimatedUsers, generation);
@@ -135,6 +143,8 @@ export const handlePrepareCommand = async (botManager) => {
       const failed = results.find(result => result.status === 'rejected');
       if (failed) { throw failed.reason; }
     }
+
+    if (botManager.isClassificationCancelled(generation)) { return; }
 
     // Extraction is complete; classified sets now provide all deduplication we need.
     botManager.seenUsers.clear();
@@ -171,12 +181,16 @@ export const handlePrepareCommand = async (botManager) => {
       );
     }
   } catch (error) {
+    if (generation !== null && botManager.isClassificationCancelled(generation)) { return; }
     console.error('handlePrepareCommand failed:', error);
     await botManager.clearRoomBots();
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, 'فشل تجهيز بوت الغرفة، يرجى المحاولة مجدداً', mainBot, mainBot);
     throw error;
   } finally {
-    botManager.setIsBusy(false);
-    botManager.isPreparing = false;
+    if (generation === null || botManager._activePreparationGeneration === generation) {
+      botManager.setIsBusy(false);
+      botManager.isPreparing = false;
+      botManager._activePreparationGeneration = null;
+    }
   }
 };

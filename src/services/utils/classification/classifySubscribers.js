@@ -91,8 +91,10 @@ export async function classifySubscriberPatch (botManager, roomBot, subscriberId
       cancelled: botManager.isClassificationCancelled(generation)
     };
   } finally {
-    ids.forEach(id => botManager.classifyingUsers.delete(id));
-    botManager.emitClassificationStatus(previousState);
+    if (!botManager.isClassificationCancelled(generation)) {
+      ids.forEach(id => botManager.classifyingUsers.delete(id));
+      botManager.emitClassificationStatus(previousState);
+    }
     botManager.signalRecipientChange();
   }
 }

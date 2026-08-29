@@ -28,6 +28,7 @@ function extractAdBotPatchState (botManager) {
   };
 }
 async function sendPatchMessages (botManager) {
+  const generation = botManager._classificationGeneration;
   const messages = botManager.getMessages();
   if (!Array.isArray(messages) || !messages.length) {
     throw new Error('No messages to send');
@@ -54,7 +55,7 @@ async function sendPatchMessages (botManager) {
   const patchSize = adBots.length;
 
   try {
-    while (!botManager.isReseting) {
+    while (!botManager.isClassificationCancelled(generation)) {
       const users = botManager.getUsers();
       if (currentIndex >= users.length) {
         if (botManager.hasPendingClassification()) {
@@ -148,10 +149,12 @@ async function sendPatchMessages (botManager) {
       }
     }
   } catch (error) {
+    if (botManager.isClassificationCancelled(generation)) { return; }
     console.error('Error sending patch messages:', error);
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, error.message, botManager.getMainBot());
   } finally {
-    await botManager.clearAdBots();
+    adBots.forEach(bot => botManager.removeBot('ad', bot));
+    await Promise.allSettled(adBots.map(bot => bot.disconnect()));
   }
 }
 

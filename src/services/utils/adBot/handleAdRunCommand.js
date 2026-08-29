@@ -58,8 +58,9 @@ export const handleAdRunCommand = async (botManager) => {
     );
 
     // Send advertisement messages in batches using ad bots
+    const generation = botManager._classificationGeneration;
     await sendPatchMessages(botManager);
-    if (!mainBot) {
+    if (!mainBot || botManager.isClassificationCancelled(generation)) {
       return;
     }
     // Update workflow step to indicate ads have been sent

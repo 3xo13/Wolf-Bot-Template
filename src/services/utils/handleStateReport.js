@@ -2,11 +2,22 @@
 import { sendPrivateMessage } from './messaging/sendPrivateMessage.js';
 import { checkBotStep } from './steps/checkBotStep.js';
 
+export const buildStateReport = (state, isActive) => {
+  let usersLine = '';
+  if (state.botType !== 'magic') {
+    usersLine = `
+		إجمالي المستخدمين : ${state.users || 0}`;
+  }
+  return `
+		نوع البوت : ${state.botType === 'magic' ? 'السحري' : 'العادي'}${usersLine}
+		عدد الاعلانات : ${state.adsSent || 0}
+    حاله البوت : ${isActive ? 'يعمل' : 'متوقف'}`;
+};
+
 export const handleStateReport = async (botManager) => {
   try {
     const mainBot = botManager.getMainBot();
     const state = botManager.getState();
-    const channelsLength = botManager.getChannels().length;
     let isActive = false;
     if (botManager.botType === 'ad') {
       if (checkBotStep(botManager, 'sending')) {
@@ -18,11 +29,7 @@ export const handleStateReport = async (botManager) => {
         isActive = true;
       }
     }
-    // 	إجمالي الأعضاء : ${state.users}
-    const report = ` 
-		نوع البوت : ${state.botType === 'magic' ? 'السحري' : 'العادي'}
-		عدد الاعلانات : ${state.adsSent + 1 || 0}
-    حاله البوت : ${isActive ? 'يعمل' : 'متوقف'}`;
+    const report = buildStateReport(state, isActive);
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
       report,

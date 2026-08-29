@@ -6,7 +6,8 @@ export async function getAllChannelMembers (
   channelId,
   limit = 100,
   onPage = null,
-  collect = true
+  collect = true,
+  generation = null
 ) {
   if (!roomBot.connected) {
     throw new Error('Not connected');
@@ -31,7 +32,7 @@ export async function getAllChannelMembers (
   try {
     // Fetch all member types in parallel for faster extraction
     const results = await Promise.allSettled(
-      memberTypes.map(type => getChannelMembers(botManager, roomBot, channelId, type, limit, onPage, collect))
+      memberTypes.map(type => getChannelMembers(botManager, roomBot, channelId, type, limit, onPage, collect, generation))
     );
 
     // Process results

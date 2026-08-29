@@ -46,9 +46,6 @@ const handleHelpCommand = async (botManager) => {
       helpMessage = '❌ نوع البوت غير محدد. الرجاء إعداد البوت أولاً.';
     }
 
-    if (botType === 'ad' || botType === 'magic') {
-      helpMessage += '\nاعادة فحص المستخدمين\nتجاهل المستخدمين';
-    }
     await sendPrivateMessage(userId, helpMessage, mainBot);
   } catch (error) {
     console.error('Error in handleHelpCommand:', error);

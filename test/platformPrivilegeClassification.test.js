@@ -10,6 +10,7 @@ import { handleGroupMessage } from '../src/services/utils/roomBot/magic/handleGr
 import { getAllChannelMembers } from '../src/services/utils/roomBot/getAllChannelMembers.js';
 import { getLowRoomClassificationWorkerCount } from '../src/services/utils/roomBot/handlePrepareCommand.js';
 import { sendUpdateEvent } from '../src/services/utils/updates/sendUpdateEvent.js';
+import { buildStateReport } from '../src/services/utils/handleStateReport.js';
 
 function manager () {
   return new BotStateManager({
@@ -145,6 +146,24 @@ test('socket updates safely ignore a missing or disconnected manager', async () 
   assert.equal(await sendUpdateEvent({ socket: { connected: false } }, 'test', {}), false);
 });
 
+test('idle status reports zero ads and includes total users above ads', () => {
+  const report = buildStateReport({ botType: 'ad', users: 0, adsSent: 0 }, false);
+  const usersPosition = report.indexOf('إجمالي المستخدمين : 0');
+  const adsPosition = report.indexOf('عدد الاعلانات : 0');
+
+  assert.ok(usersPosition >= 0);
+  assert.ok(adsPosition > usersPosition);
+  assert.ok(report.includes('حاله البوت : متوقف'));
+});
+
+test('magic status omits the total-user line', () => {
+  const report = buildStateReport({ botType: 'magic', users: 12, adsSent: 4 }, true);
+
+  assert.equal(report.includes('إجمالي المستخدمين'), false);
+  assert.ok(report.includes('عدد الاعلانات : 4'));
+  assert.ok(report.includes('حاله البوت : يعمل'));
+});
+
 test('disconnect cleanup immediately and idempotently disconnects every bot', async () => {
   const botManager = manager();
   let disconnects = 0;
@@ -161,4 +180,81 @@ test('disconnect cleanup immediately and idempotently disconnects every bot', as
   assert.equal(disconnects, 3);
   assert.equal(botManager.roomBots.length, 0);
   assert.equal(botManager.adBots.length, 0);
+  assert.equal(botManager._destroyed, true);
+});
+
+test('command reset keeps the manager reusable and the main bot connected', async () => {
+  const botManager = manager();
+  const mainBot = { connected: true };
+  botManager.mainBot = mainBot;
+  botManager._destroyed = false;
+
+  await botManager.resetState();
+
+  assert.equal(botManager._destroyed, false);
+  assert.equal(botManager.isClassificationCancelled(), false);
+  assert.equal(botManager.getMainBot(), mainBot);
+  assert.equal(botManager.getCurrentStep(), 1);
+});
+
+test('normal classification works again after a command reset', async () => {
+  const botManager = manager();
+  await botManager.resetState();
+  botManager.config.baseConfig.excludeAdmins = true;
+  const requests = [];
+  const roomBot = fakeRoomBot(id => ({ id, privileges: 0 }), requests);
+
+  const result = await classifySubscriberPatch(botManager, roomBot, ['42'], { attempts: 1 });
+
+  assert.deepEqual(result.eligible, ['42']);
+  assert.equal(botManager.eligibleUsers.has('42'), true);
+  assert.equal(requests.length, 1);
+});
+
+test('a profile response from before reset cannot mutate the new session', async () => {
+  const botManager = manager();
+  let releaseRequest;
+  let markRequestStarted;
+  const requestStarted = new Promise(resolve => { markRequestStarted = resolve; });
+  const requestGate = new Promise(resolve => { releaseRequest = resolve; });
+  const roomBot = {
+    connected: true,
+    websocket: {
+      emit: async () => {
+        markRequestStarted();
+        await requestGate;
+        return { success: true, body: { 42: { success: true, body: { id: 42, privileges: 0 } } } };
+      }
+    }
+  };
+
+  const oldClassification = classifySubscriberPatch(botManager, roomBot, ['42'], { attempts: 1 });
+  await requestStarted;
+  await botManager.resetState();
+  botManager.classificationState = 'classifying';
+  botManager.classifyingUsers.add('new-session-user');
+  releaseRequest();
+
+  const result = await oldClassification;
+  assert.equal(result.cancelled, true);
+  assert.equal(botManager.eligibleUsers.has('42'), false);
+  assert.equal(botManager.classifyingUsers.has('new-session-user'), true);
+  assert.equal(botManager.classificationState, 'classifying');
+});
+
+test('magic activity is classified and queued after a command reset', async () => {
+  const botManager = manager();
+  await botManager.resetState();
+  botManager.config.baseConfig.botType = 'magic';
+  botManager.config.baseConfig.excludeAdmins = true;
+  botManager.currentStep = 6;
+  const requests = [];
+  const roomBot = fakeRoomBot(id => ({ id, privileges: 0 }), requests);
+  botManager.roomBots = [roomBot];
+
+  await handleGroupMessage(botManager, { sourceSubscriberId: 77 }, roomBot);
+
+  assert.equal(requests.length, 1);
+  assert.equal(botManager.eligibleUsers.has('77'), true);
+  assert.equal(botManager.channelUsers.has('77'), true);
 });

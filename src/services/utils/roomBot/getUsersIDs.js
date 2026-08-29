@@ -9,12 +9,12 @@ export async function getChannelList (roomBot) {
   return response;
 }
 
-export const extractChannelMembers = async (roomBot, botManager, channelId) => {
+export const extractChannelMembers = async (roomBot, botManager, channelId, generation = null) => {
   try {
     if (!roomBot.connected) {
       throw new Error('بوت الغرفة غير متصل');
     }
-    if (botManager.isReseting) {
+    if (botManager.isReseting || (generation !== null && botManager.isClassificationCancelled(generation))) {
       throw new Error('البوت في وضع إعادة التعيين، لا يمكن استخراج المستخدمين الآن');
     }
     try {
@@ -25,11 +25,12 @@ export const extractChannelMembers = async (roomBot, botManager, channelId) => {
         99999999,
         async (members) => {
           for (const member of members) {
-            if (botManager.isReseting) { return; }
+            if (botManager.isReseting || (generation !== null && botManager.isClassificationCancelled(generation))) { return; }
             if (member?.id) { botManager.enqueueCandidate(member.id); }
           }
         },
-        false
+        false,
+        generation
       );
     } catch (error) {
       console.log(`❌ Channel ${channelId}: Failed to extract members -`, error.message);
