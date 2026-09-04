@@ -1,6 +1,7 @@
 // This module handles the command for preparing and connecting a room bot.
 // It validates the token, connects the room bot, retrieves channel list, and updates botManager state.
 import { adBotSteps } from '../constants/adBotSteps.js';
+import { userMessages } from '../constants/userMessages.js';
 import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js';
 import setStepState from '../steps/setStepState.js';
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
@@ -9,6 +10,11 @@ import { updateEvents } from '../constants/updateEvents.js';
 import { updateTimers } from '../../helpers/updateTimers.js';
 import { checkBotStep } from '../steps/checkBotStep.js';
 import handleBotStepReplay from '../steps/handleBotStepReplay.js';
+import { assertRoomAccountClassificationCapacity } from '../classification/classificationPool.js';
+import {
+  assertRoomConnectionCooldownComplete,
+  startRoomConnectionCooldown
+} from './roomConnectionCooldown.js';
 
 /**
  * Handles the room bot setup command.
@@ -30,6 +36,7 @@ export const handleRoomCommand = async (token, botManager) => {
       console.log('🚀 ~ mainBot state:', !mainBot || !mainBot.connected);
       return;
     }
+    assertRoomConnectionCooldownComplete(botManager);
     if (checkBotStep(botManager, 'room')) {
       await handleBotStepReplay(botManager);
       return;
@@ -47,11 +54,31 @@ export const handleRoomCommand = async (token, botManager) => {
     botManager.addNewRoomBotToken(token);
     updateTimers(botManager, 'room');
     // Connect the room bot
-    const newRoomBot = await botManager.connect('room');
+    let newRoomBot;
+    try {
+      newRoomBot = await botManager.connect('room');
+    } catch (error) {
+      // The token is appended before connect() so it can be selected by the
+      // connection factory. A rejected login must roll that provisional entry
+      // back or later room-account state no longer matches the managed bots.
+      botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      startRoomConnectionCooldown(botManager);
+      const connectionError = new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`);
+      connectionError.cause = error;
+      throw connectionError;
+    }
     // Retrieve the list of channels for the room bot
     const channels = await getChannelList(newRoomBot);
     // Extract channel IDs from the channel list (channels is already an array from WOLF API)
     const channelsIds = channels.map(channel => channel.id);
+    try {
+      assertRoomAccountClassificationCapacity(channelsIds.length);
+    } catch (error) {
+      botManager.removeBot('room', newRoomBot);
+      await newRoomBot.disconnect();
+      botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      throw error;
+    }
     if (channelsIds.length === 0) {
       await botManager.clearRoomBots();
       throw new Error('لا يوجد رومات في هذا الحساب');

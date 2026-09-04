@@ -5,6 +5,11 @@ import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js';
 import { getChannelList } from '../roomBot/getUsersIDs.js';
 import setStepState from '../steps/setStepState.js';
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
+import {
+  assertRoomAccountClassificationCapacity,
+  assertRoomBotPoolCapacity,
+  ensureClassificationBots
+} from '../classification/classificationPool.js';
 
 export const handleMagicBotAutoRun = async (botManager) => {
   const mainBot = botManager.getMainBot();
@@ -26,17 +31,25 @@ export const handleMagicBotAutoRun = async (botManager) => {
   const messagingStyle = botManager.config.baseConfig.messagingStyle;
   const messages = botManager.config.baseConfig.messages;
   try {
+    assertRoomBotPoolCapacity(roomBotTokens.length);
     setStepState(botManager, 'room');
     const results = await Promise.all(roomBotTokens.map(token => botManager.connect('room')));
     if (!results.every(promise => promise)) {
       throw new Error('Failed to connect all room bots');
     }
     const roomBots = botManager.getRoomBots();
+    await ensureClassificationBots(botManager);
 
     // Get all channel lists in parallel
     const channelResults = await Promise.all(
       roomBots.map(roomBot => getChannelList(roomBot))
     );
+    try {
+      channelResults.forEach(channels => assertRoomAccountClassificationCapacity(channels.length));
+    } catch (error) {
+      await botManager.clearRoomBots();
+      throw error;
+    }
 
     // Extract all channel IDs
     let channelIds = [];

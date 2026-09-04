@@ -31,12 +31,19 @@ export const handleMagicBotCommand = async (command, args) => {
       .body
       .split('\n');
     switch (commandName) {
+      case 'اعادة فحص الاعضاء':
       case 'اعادة فحص المستخدمين':
         await botManager.handleRetryUnknownUsers();
         return;
 
+      case 'تجاهل الاعضاء':
       case 'تجاهل المستخدمين':
         await botManager.handleIgnoreUnknownUsers();
+        return;
+
+      case 'تجاهل جميع الاعضاء':
+      case 'تجاهل جميع المستخدمين':
+        await botManager.handleIgnoreAllUnknownUsers();
         return;
 
       case 'حساب رومات':

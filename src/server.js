@@ -116,7 +116,8 @@ io.on('connection', async (clientSocket) => {
       try {
         await wolfStateManager.connect('main');
       } catch (error) {
-        console.error(`Failed to initialize botId ${botId}:`, error);
+        // Transport errors can contain the complete token-bearing websocket URL.
+        console.error(`Failed to initialize botId ${botId}: ${error?.message || 'Unknown connection error'}`);
         await cleanupClient(clientSocket);
         if (clientSocket.connected) { clientSocket.disconnect(true); }
         return;
@@ -150,6 +151,11 @@ io.on('connection', async (clientSocket) => {
     clientSocket.on('classification:ignore', async () => {
       const manager = clientApiMap.get(clientSocket.botId);
       if (manager) { await manager.handleIgnoreUnknownUsers(); }
+    });
+
+    clientSocket.on('classification:ignore-all', async () => {
+      const manager = clientApiMap.get(clientSocket.botId);
+      if (manager) { await manager.handleIgnoreAllUnknownUsers(); }
     });
 
     // clientSocket.on("stop-bots", async () => {

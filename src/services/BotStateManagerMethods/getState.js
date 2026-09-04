@@ -5,6 +5,7 @@ export function getStateFn (manager) {
     botType,
     roomBots: manager.roomBots.filter(bot => bot.connected).length,
     adBots: manager.adBots.filter(bot => bot.connected).length,
+    classificationBots: manager.classificationBots.filter(bot => bot.connected).length,
     channels: Array.from(manager.channels.keys()).length,
     users: Array.from(manager.users).length,
     messages: Array.from(manager.messages),

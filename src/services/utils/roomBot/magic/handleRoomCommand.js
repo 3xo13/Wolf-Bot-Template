@@ -10,6 +10,16 @@ import { userMessages } from '../../constants/userMessages.js';
 import { updateTimers } from '../../../helpers/updateTimers.js';
 import { checkBotStep } from '../../steps/checkBotStep.js';
 import handleBotStepReplay from '../../steps/handleBotStepReplay.js';
+import {
+  assertRoomAccountClassificationCapacity,
+  assertRoomBotPoolCapacity,
+  ensureClassificationBots,
+  reserveClassificationCapacityForRoomBots
+} from '../../classification/classificationPool.js';
+import {
+  assertRoomConnectionCooldownComplete,
+  startRoomConnectionCooldown
+} from '../roomConnectionCooldown.js';
 
 /**
  * Handles the room bot setup command.
@@ -32,6 +42,7 @@ export const handleRoomCommand = async (token, botManager) => {
       setStepState(botManager, '', '');
       return;
     }
+    assertRoomConnectionCooldownComplete(botManager);
     if (checkBotStep(botManager, 'room') || !checkBotStep(botManager, 'main')) {
       await handleBotStepReplay(botManager);
       return;
@@ -40,13 +51,25 @@ export const handleRoomCommand = async (token, botManager) => {
     if (!token.startsWith('WE-')) {
       throw new Error('يرجى ادخال توكين الحساب بشكل صحيح\nWE-AAAAAAAA');
     }
-    // Set the room bot token in botManager
-    botManager.addNewRoomBotToken(token);
-
     const instanceCount = botManager.config.baseConfig.instanceLimit;
 
+    const futureRoomBotCount = botManager.getRoomBots().length + 1;
+    assertRoomBotPoolCapacity(futureRoomBotCount);
+    await reserveClassificationCapacityForRoomBots(botManager, futureRoomBotCount);
+    // Set the room bot token in botManager
+    botManager.addNewRoomBotToken(token);
     // Connect the room bot
-    const newRoomBot = await botManager.connect('room');
+    let newRoomBot;
+    try {
+      newRoomBot = await botManager.connect('room');
+    } catch (error) {
+      botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      await ensureClassificationBots(botManager);
+      startRoomConnectionCooldown(botManager);
+      const connectionError = new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`);
+      connectionError.cause = error;
+      throw connectionError;
+    }
 
     updateTimers(botManager, 'room');
     // botManager.startRoomBotsReconnectScheduler();
@@ -54,6 +77,15 @@ export const handleRoomCommand = async (token, botManager) => {
     const channels = await getChannelList(newRoomBot);
     // Extract channel IDs from the channel list (channels is already an array from WOLF API)
     const channelsIds = channels.map(channel => channel.id);
+    try {
+      assertRoomAccountClassificationCapacity(channelsIds.length);
+    } catch (error) {
+      botManager.removeBot('room', newRoomBot);
+      await newRoomBot.disconnect();
+      botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      await ensureClassificationBots(botManager);
+      throw error;
+    }
 
     if (channelsIds.length === 0) {
       await botManager.clearRoomBots();
@@ -71,6 +103,7 @@ export const handleRoomCommand = async (token, botManager) => {
 
     // Update botManager with the channel IDs
     botManager.setChannels(channelsIds);
+    await ensureClassificationBots(botManager);
 
     // For magic bots, subscribe to audio slots for all channels
     if (botManager.getBotType() === 'magic') {

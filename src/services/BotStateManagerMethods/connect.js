@@ -2,18 +2,69 @@ import CustomWOLF from '../CustomWOLF.js';
 import { handleAdBotCommand } from '../utils/handleAdBotCommand.js';
 import { handleMagicBotCommand } from '../utils/handleMagicBotCommand.js';
 import { handleGroupMessage } from '../utils/roomBot/magic/handleGroupMessage.js';
+import { updateEvents } from '../utils/constants/updateEvents.js';
+
+async function loginOrDispose (bot, config) {
+  try {
+    return await bot.login(config);
+  } catch (error) {
+    // A failed initial login is not owned by the manager yet. Stop Socket.IO's
+    // automatic reconnection so it cannot survive as an orphan connection.
+    bot.connected = false;
+    try { bot.stopSocketReconnection?.(); } catch {}
+    try { await bot.websocket?.disconnect(); } catch {}
+    throw error;
+  }
+}
+
+export function registerConnectedBot (manager, botType, botInstance, generation) {
+  if (manager.isReseting || manager._destroyed || generation !== manager._connectionGeneration) {
+    return false;
+  }
+  if (botType === 'main') {
+    manager.mainBot = botInstance;
+  } else if (botType === 'room') {
+    manager.roomBots.push(botInstance);
+  } else if (botType === 'ad') {
+    manager.adBots.push(botInstance);
+  }
+  botInstance._managerRegistered = true;
+  const eventName = {
+    main: updateEvents.bots.main.connected,
+    room: updateEvents.bots.room.connected,
+    ad: updateEvents.bots.ad.connected
+  }[botType];
+  if (eventName) {
+    manager.emit(eventName, {
+      subscriber: {
+        id: botInstance.currentSubscriber?.id,
+        nickname: botInstance.currentSubscriber?.nickname
+      }
+    });
+  }
+  return true;
+}
+
+async function rejectStaleConnection (manager, botType, botInstance, generation) {
+  if (registerConnectedBot(manager, botType, botInstance, generation)) { return; }
+  try { await botInstance.disconnect(); } catch {}
+  const error = new Error('Bot connection was cancelled by reset');
+  error.code = 'BOT_CONNECTION_CANCELLED';
+  throw error;
+}
 
 export async function connectFn (manager, botType, adBotIndex) {
   if (manager.isReseting) {
     throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
   }
+  const connectionGeneration = manager._connectionGeneration;
   const { mainBotConfig, roomBotConfig, adBotConfig } = manager.config;
   let botInstance;
   switch (botType) {
     case 'main':
       botInstance = new CustomWOLF(manager, 'main');
-      await botInstance.login(mainBotConfig);
-      manager.mainBot = botInstance;
+      await loginOrDispose(botInstance, mainBotConfig);
+      await rejectStaleConnection(manager, botType, botInstance, connectionGeneration);
 
       // Setup message routing for ad and magic bot types
       botInstance.setupMessageRouting({
@@ -29,8 +80,8 @@ export async function connectFn (manager, botType, adBotIndex) {
     case 'room': {
       botInstance = new CustomWOLF(manager, 'room');
       const roomConfig = { ...roomBotConfig, token: manager.roomBotsTokens.at(-1) };
-      await botInstance.login(roomConfig);
-      manager.roomBots.push(botInstance);
+      await loginOrDispose(botInstance, roomConfig);
+      await rejectStaleConnection(manager, botType, botInstance, connectionGeneration);
 
       // For magic bots, set up group message and update listeners
       if (manager.getBotType() === 'magic') {
@@ -95,8 +146,8 @@ export async function connectFn (manager, botType, adBotIndex) {
       if (!adBotConfig[adBotIndex]) {
         throw new Error(`Ad bot configuration not found at index ${adBotIndex}`);
       }
-      await botInstance.login({ ...adBotConfig[adBotIndex] });
-      manager.adBots.push(botInstance);
+      await loginOrDispose(botInstance, { ...adBotConfig[adBotIndex] });
+      await rejectStaleConnection(manager, botType, botInstance, connectionGeneration);
       break;
     default:
       throw new Error(`Unknown bot type: ${botType}`);

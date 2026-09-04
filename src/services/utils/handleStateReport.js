@@ -3,13 +3,13 @@ import { sendPrivateMessage } from './messaging/sendPrivateMessage.js';
 import { checkBotStep } from './steps/checkBotStep.js';
 
 export const buildStateReport = (state, isActive) => {
-  let usersLine = '';
+  let membersLine = '';
   if (state.botType !== 'magic') {
-    usersLine = `
-		إجمالي المستخدمين : ${state.users || 0}`;
+    membersLine = `
+		إجمالي الأعضاء : ${state.users || 0}`;
   }
   return `
-		نوع البوت : ${state.botType === 'magic' ? 'السحري' : 'العادي'}${usersLine}
+		نوع البوت : ${state.botType === 'magic' ? 'السحري' : 'العادي'}${membersLine}
 		عدد الاعلانات : ${state.adsSent || 0}
     حاله البوت : ${isActive ? 'يعمل' : 'متوقف'}`;
 };

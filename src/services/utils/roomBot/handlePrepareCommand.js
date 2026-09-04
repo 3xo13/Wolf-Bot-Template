@@ -1,4 +1,5 @@
 import { adBotSteps } from '../constants/adBotSteps.js';
+import { userMessages } from '../constants/userMessages.js';
 import { updateEvents } from '../constants/updateEvents.js';
 import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js';
 import setStepState from '../steps/setStepState.js';
@@ -6,51 +7,49 @@ import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 import { extractChannelMembers } from './getUsersIDs.js';
 import { checkBotStep } from '../steps/checkBotStep.js';
 import handleBotStepReplay from '../steps/handleBotStepReplay.js';
-import { classifySubscriberPatch } from '../classification/classifySubscribers.js';
-import { reportAutoClassification, reportUnknownDecision, startSlowUnknownRetry } from '../classification/unknownUsers.js';
-
-async function classificationWorker (botManager, roomBot, generation) {
-  while (!botManager.isClassificationCancelled(generation)) {
-    const patch = botManager.takeClassificationPatch(50, botManager.classificationProducers <= 0);
-    if (patch.length) {
-      botManager.classificationInFlight++;
-      try {
-        await classifySubscriberPatch(botManager, roomBot, patch);
-      } finally {
-        if (!botManager.isClassificationCancelled(generation)) {
-          botManager.classificationInFlight--;
-        }
-      }
-      continue;
-    }
-    if (botManager.classificationProducers <= 0) { return; }
-    await botManager.waitForRecipientChange(100);
-  }
-}
-
-async function fetchAndClassify (botManager, roomBot, channelId, generation) {
-  try {
-    await extractChannelMembers(roomBot, botManager, channelId, generation);
-  } finally {
-    if (!botManager.isClassificationCancelled(generation)) {
-      botManager.classificationProducers--;
-    }
-    botManager.signalRecipientChange();
-  }
-  if (botManager.config.baseConfig.excludeAdmins) {
-    await classificationWorker(botManager, roomBot, generation);
-  }
-}
+import {
+  ensureClassificationBots,
+  startClassificationWorkers,
+  waitForClassificationWorkers
+} from '../classification/classificationPool.js';
+import { reportAutoClassification } from '../classification/unknownUsers.js';
+import {
+  assertRoomConnectionCooldownComplete,
+  startRoomConnectionCooldown
+} from './roomConnectionCooldown.js';
 
 async function fetchOnly (botManager, roomBot, channelId, generation) {
   try {
     await extractChannelMembers(roomBot, botManager, channelId, generation);
   } finally {
     if (!botManager.isClassificationCancelled(generation)) {
-      botManager.classificationProducers--;
+      botManager.classificationProducers = Math.max(0, botManager.classificationProducers - 1);
     }
     botManager.signalRecipientChange();
   }
+}
+
+export async function releasePreparationRoomBots (botManager, producerBots, generation) {
+  if (botManager.isClassificationCancelled(generation)) { return false; }
+  // Only release the bots owned by this preparation run. A reset may already
+  // have started a new session with different room bots in the manager.
+  await botManager.clearRoomBots(producerBots);
+  return true;
+}
+
+export async function connectPreparationRoomBots (botManager, count) {
+  // Preserve the original parallel connection behavior. Waiting with
+  // allSettled keeps partial failures safe without stretching the proxy load
+  // into a long stream of new WebSocket handshakes.
+  const results = await Promise.allSettled(
+    Array.from({ length: count }, () => botManager.connect('room'))
+  );
+  return {
+    bots: results
+      .filter(result => result.status === 'fulfilled')
+      .map(result => result.value),
+    error: results.find(result => result.status === 'rejected')?.reason || null
+  };
 }
 
 export function getLowRoomClassificationWorkerCount (roomCount, userCount) {
@@ -58,47 +57,16 @@ export function getLowRoomClassificationWorkerCount (roomCount, userCount) {
   return userCount < 50000 ? 3 : 5;
 }
 
-async function runLowRoomPipeline (botManager, producerBots, channels, estimatedUsers, generation) {
-  const classificationBots = [];
-  const workerTasks = [];
-
-  const scaleWorkers = async (userCount) => {
-    const target = getLowRoomClassificationWorkerCount(channels.length, userCount);
-    const missing = target - classificationBots.length;
-    if (missing <= 0) { return; }
-    const connected = await Promise.all(Array.from({ length: missing }, () => botManager.connect('room')));
-    classificationBots.push(...connected);
-    connected.forEach(bot => workerTasks.push(classificationWorker(botManager, bot, generation)));
-  };
-
-  // Channel metadata lets large one/two-room campaigns start classifiers before extraction.
-  await scaleWorkers(estimatedUsers);
-  const extractionTask = Promise.allSettled(channels.map((channelId, index) =>
-    fetchOnly(botManager, producerBots[index], channelId, generation)
-  ));
-
-  while (botManager.classificationProducers > 0 && !botManager.isClassificationCancelled(generation)) {
-    await scaleWorkers(botManager.seenUsers.size);
-    await botManager.waitForRecipientChange(100);
-  }
-  await scaleWorkers(botManager.seenUsers.size);
-
-  const extractionResults = await extractionTask;
-  const extractionFailure = extractionResults.find(result => result.status === 'rejected');
-  if (extractionFailure) { throw extractionFailure.reason; }
-
-  if (!classificationBots.length) {
-    producerBots.forEach(bot => workerTasks.push(classificationWorker(botManager, bot, generation)));
-  }
-  const workerResults = await Promise.allSettled(workerTasks);
-  const workerFailure = workerResults.find(result => result.status === 'rejected');
-  if (workerFailure) { throw workerFailure.reason; }
-}
-
 export const handlePrepareCommand = async (botManager) => {
+  // Keep a failed pool's primary room bot intact while the remote sessions are
+  // given time to close. This check must happen outside the cleanup catch.
+  assertRoomConnectionCooldownComplete(botManager);
   botManager.setIsBusy(true);
   const mainBot = botManager.getMainBot();
   let generation = null;
+  let producerBots = [];
+  let additionalProducers = [];
+  let roomPoolConnectionFailed = false;
   try {
     const initialRoomBot = botManager.getRoomBots()[0];
     if (!checkBotStep(botManager, 'room') || !initialRoomBot) {
@@ -114,7 +82,6 @@ export const handlePrepareCommand = async (botManager) => {
     botManager.clearClassificationState();
     generation = botManager._classificationGeneration;
     botManager._activePreparationGeneration = generation;
-    botManager.emitClassificationStatus('classifying');
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, 'جاري التجهيز...', mainBot, mainBot);
 
     const channels = botManager.getChannels();
@@ -123,53 +90,58 @@ export const handlePrepareCommand = async (botManager) => {
     const estimatedUsers = channelProfiles
       .filter(channel => channelIds.has(String(channel.id)))
       .reduce((total, channel) => total + (Number(channel.membersCount) || 0), 0);
-    const additionalProducers = await Promise.all(
-      Array.from({ length: Math.max(0, channels.length - 1) }, () => botManager.connect('room'))
+    producerBots = [initialRoomBot];
+    const additionalConnections = await connectPreparationRoomBots(
+      botManager,
+      Math.max(0, channels.length - 1)
     );
-    const producerBots = [initialRoomBot, ...additionalProducers];
-    if (producerBots.length !== channels.length) { throw new Error('تعذر تخصيص بوت واحد لكل غرفة'); }
+    additionalProducers = additionalConnections.bots;
+    producerBots.push(...additionalProducers);
+    if (additionalConnections.error || producerBots.length !== channels.length) {
+      roomPoolConnectionFailed = true;
+      throw additionalConnections.error || new Error('تعذر تخصيص بوت واحد لكل غرفة');
+    }
 
     await Promise.all(additionalProducers.map(bot => bot.channel.list().catch(error => {
       console.warn('Failed to initialize room bot:', error.message);
     })));
 
     botManager.classificationProducers = channels.length;
-    if (botManager.config.baseConfig.excludeAdmins && channels.length < 3) {
-      await runLowRoomPipeline(botManager, producerBots, channels, estimatedUsers, generation);
-    } else {
-      const results = await Promise.allSettled(channels.map((channelId, index) =>
-        fetchAndClassify(botManager, producerBots[index], channelId, generation)
-      ));
-      const failed = results.find(result => result.status === 'rejected');
-      if (failed) { throw failed.reason; }
+    if (botManager.config.baseConfig.excludeAdmins) {
+      await ensureClassificationBots(botManager, estimatedUsers);
+      if (!botManager.getClassificationBots().length) {
+        throw new Error('تعذر إنشاء حسابات التصنيف');
+      }
+      botManager.emitClassificationStatus('classifying');
+      startClassificationWorkers(botManager);
     }
 
+    const extractionResults = await Promise.allSettled(channels.map((channelId, index) =>
+      fetchOnly(botManager, producerBots[index], channelId, generation)
+    ));
+    const extractionFailure = extractionResults.find(result => result.status === 'rejected');
+    if (extractionFailure) { throw extractionFailure.reason; }
+
+    // Discovery accounts are no longer classification workers and can be released
+    // as soon as every room page has been published.
+    if (!await releasePreparationRoomBots(botManager, producerBots, generation)) { return; }
+
+    if (botManager.config.baseConfig.excludeAdmins) {
+      await waitForClassificationWorkers(botManager, generation);
+    }
     if (botManager.isClassificationCancelled(generation)) { return; }
 
-    // Extraction is complete; classified sets now provide all deduplication we need.
     botManager.seenUsers.clear();
-    botManager.classificationQueue = [];
-    botManager.classificationQueueIndex = 0;
-
+    botManager.clearPendingClassificationQueue();
     setStepState(botManager, 'members');
     botManager.clearChannels();
     await sendUpdateEvent(botManager, updateEvents.users.setup, { users: botManager.getUsers().length });
-
-    if (botManager.unknownUsers.size) {
-      while (botManager.getRoomBots().length > 1) {
-        const bot = botManager.getRoomBots().at(-1);
-        botManager.roomBots = botManager.getRoomBots().slice(0, -1);
-        await bot.disconnect();
-      }
-      if (botManager.config.baseConfig.autoRun) {
-        await reportAutoClassification(botManager);
-        startSlowUnknownRetry(botManager);
-      } else {
-        await reportUnknownDecision(botManager);
-      }
-    } else {
+    if (botManager.unknownUsers.size && botManager.config.baseConfig.autoRun) {
+      await reportAutoClassification(botManager);
+      botManager.startSlowUnknownRetry();
+    } else if (!botManager.unknownUsers.size) {
       botManager.emitClassificationStatus('idle');
-      await botManager.clearRoomBots();
+      await botManager.clearClassificationBots();
     }
 
     if (!botManager.isReseting) {
@@ -183,7 +155,21 @@ export const handlePrepareCommand = async (botManager) => {
   } catch (error) {
     if (generation !== null && botManager.isClassificationCancelled(generation)) { return; }
     console.error('handlePrepareCommand failed:', error);
-    await botManager.clearRoomBots();
+    if (roomPoolConnectionFailed) {
+      // The operator-provided first room bot remains available so preparation
+      // can be retried. Only temporary per-room producers are rolled back.
+      await botManager.clearRoomBots(additionalProducers);
+      await botManager.clearClassificationBots();
+      startRoomConnectionCooldown(botManager, { nextCommand: 'prepare' });
+      const connectionError = new Error(
+        `فشل اتصال أحد حسابات الرومات. تم إغلاق حسابات الرومات الإضافية والإبقاء على حساب الرومات الرئيسي.
+${userMessages.preparationConnectionCooldownStarted}`
+      );
+      connectionError.cause = error;
+      throw connectionError;
+    }
+    await botManager.clearRoomBots(producerBots.length ? producerBots : null);
+    await botManager.clearClassificationBots();
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, 'فشل تجهيز بوت الغرفة، يرجى المحاولة مجدداً', mainBot, mainBot);
     throw error;
   } finally {

@@ -7,13 +7,15 @@ export function listAllBotsFn (manager) {
   {
     mainBot: manager.mainBot?.connected,
     roomBots: manager.roomBots.map(bot => ({ connected: bot.connected, config: bot.config })),
-    adBots: manager.adBots.map(bot => ({ connected: bot.connected, config: bot.config }))
+    adBots: manager.adBots.map(bot => ({ connected: bot.connected, config: bot.config })),
+    classificationBots: manager.classificationBots.map(bot => ({ connected: bot.connected }))
   }
   );
   return {
     mainBot: manager.mainBot?.connected,
     roomBots: manager.roomBots.map(bot => bot.connected),
-    adBots: manager.adBots.map(bot => bot.connected)
+    adBots: manager.adBots.map(bot => bot.connected),
+    classificationBots: manager.classificationBots.map(bot => bot.connected)
   };
 }
 

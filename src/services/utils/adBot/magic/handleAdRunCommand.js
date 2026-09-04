@@ -5,6 +5,7 @@ import { sendPrivateMessage } from '../../messaging/sendPrivateMessage.js';
 import setStepState from '../../steps/setStepState.js';
 import { checkBotStep } from '../../steps/checkBotStep.js';
 import handleBotStepReplay from '../../steps/handleBotStepReplay.js';
+import { ensureClassificationBots, startClassificationWorkers } from '../../classification/classificationPool.js';
 
 export const handleAdRunCommand = async (botManager) => {
   try {
@@ -20,6 +21,13 @@ export const handleAdRunCommand = async (botManager) => {
     }
     if (!botManager.getMessages().length) {
       throw new Error('لا يوجد رسائل في القائمة');
+    }
+    if (botManager.config.baseConfig.excludeAdmins) {
+      await ensureClassificationBots(botManager);
+      if (!botManager.getClassificationBots().length) {
+        throw new Error('تعذر إنشاء حسابات التصنيف');
+      }
+      startClassificationWorkers(botManager, { persistent: true });
     }
     setStepState(botManager, 'messaging');
     await sendUpdateEvent(botManager, updateEvents.ad.start, { isOn: true });

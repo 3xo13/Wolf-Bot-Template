@@ -30,7 +30,8 @@ export const updateEvents = {
     delete: 'users:delete'
   },
   classification: {
-    status: 'classification:status'
+    status: 'classification:status',
+    bots: 'bots:classification:update'
   },
   state: {
     clear: 'state:clear',

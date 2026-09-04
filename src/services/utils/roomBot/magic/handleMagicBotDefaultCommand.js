@@ -4,17 +4,50 @@ import { userMessages } from '../../constants/userMessages.js';
 import { sendPrivateMessage } from '../../messaging/sendPrivateMessage.js';
 import { sendUpdateEvent } from '../../updates/sendUpdateEvent.js';
 import { getChannelList } from '../getUsersIDs.js';
+import {
+  assertRoomAccountClassificationCapacity,
+  assertRoomBotPoolCapacity,
+  ensureClassificationBots,
+  reserveClassificationCapacityForRoomBots
+} from '../../classification/classificationPool.js';
+import {
+  assertRoomConnectionCooldownComplete,
+  startRoomConnectionCooldown
+} from '../roomConnectionCooldown.js';
 
 export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
   try {
     const mainBot = botManager.getMainBot();
+    assertRoomConnectionCooldownComplete(botManager);
+    const futureRoomBotCount = botManager.getRoomBots().length + 1;
+    assertRoomBotPoolCapacity(futureRoomBotCount);
+    await reserveClassificationCapacityForRoomBots(botManager, futureRoomBotCount);
     botManager.addNewRoomBotToken(commandName);
     // Connect the room bot
-    const newRoomBot = await botManager.connect('room');
+    let newRoomBot;
+    try {
+      newRoomBot = await botManager.connect('room');
+    } catch (error) {
+      botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      await ensureClassificationBots(botManager);
+      startRoomConnectionCooldown(botManager);
+      const connectionError = new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`);
+      connectionError.cause = error;
+      throw connectionError;
+    }
     // Retrieve the list of channels for the room bot
     const channels = await getChannelList(newRoomBot);
     // Extract channel IDs from the channel list (channels is already an array from WOLF API)
     const channelsIds = channels.map(channel => channel.id);
+    try {
+      assertRoomAccountClassificationCapacity(channelsIds.length);
+    } catch (error) {
+      botManager.removeBot('room', newRoomBot);
+      await newRoomBot.disconnect();
+      botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      await ensureClassificationBots(botManager);
+      throw error;
+    }
 
     if (channelsIds.length === 0) {
       await botManager.clearRoomBots();
@@ -25,6 +58,7 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
       ...botManager.getChannels(),
       ...channelsIds
     ]);
+    await ensureClassificationBots(botManager);
 
     // Subscribe to audio slots for all channels
     for (const channelId of channelsIds) {

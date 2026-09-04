@@ -17,6 +17,7 @@ class CustomWOLF extends WOLF {
     this.connected = false;
     this.isBusy = false;
     this.isWorking = false;
+    this._managerRegistered = false;
   }
 
   /**
@@ -31,6 +32,14 @@ class CustomWOLF extends WOLF {
    */
   setIsWorking (isWorking) {
     this.isWorking = isWorking;
+  }
+
+  stopSocketReconnection () {
+    const socket = this.websocket?.socket;
+    try { socket?.io?.reconnection?.(false); } catch {}
+    // wolf.js skips disconnect() while the transport is between connections.
+    // Calling Socket.IO directly also destroys a pending/reconnecting socket.
+    try { socket?.disconnect?.(); } catch {}
   }
 
   /**
@@ -81,14 +90,15 @@ class CustomWOLF extends WOLF {
   async login (config) {
     // Return a promise that waits for the actual connection
     return new Promise((resolve, reject) => {
+      const connectionTimeout = this.botType === 'room' ? 30000 : 15000;
       const timeoutId = setTimeout(async () => {
         cleanup();
         this.connected = false;
         if (this.botType === 'main') {
           await sendUpdateEvent(this.botManager, updateEvents.bots.main.disconnected, { state: 'disconnected' });
         }
-        reject(new Error('Connection timeout after 15 seconds'));
-      }, 15000);
+        reject(new Error(`Connection timeout after ${connectionTimeout / 1000} seconds`));
+      }, connectionTimeout);
 
       const handleReady = (data) => {
         clearTimeout(timeoutId);
@@ -166,24 +176,6 @@ class CustomWOLF extends WOLF {
           status: welcome.subscriber?.status,
           deviceType: welcome.deviceType
         });
-        // Notify UI based on bot type using standard events
-        if (this.botManager?.socket) {
-          const eventMap = {
-            main: updateEvents.bots.main.connected,
-            room: updateEvents.bots.room.connected,
-            ad: updateEvents.bots.ad.connected
-          };
-
-          const eventName = eventMap[this.botType];
-          if (eventName) {
-            this.botManager.socket.emit(eventName, {
-              subscriber: {
-                id: welcome.subscriber?.id,
-                nickname: welcome.subscriber?.nickname
-              }
-            });
-          }
-        }
       });
 
       // Listen for events that WOLF emits (both ready and resume)
@@ -241,15 +233,18 @@ class CustomWOLF extends WOLF {
    * Override disconnect to update connection state and notify UI
    */
   async disconnect () {
+    const shouldNotifyClient = this._managerRegistered;
+    this._managerRegistered = false;
     try {
       console.log(`🔌 Disconnecting bot: { botType: '${this.botType}', subscriberId: ${this.currentSubscriber?.id}, nickname: '${this.currentSubscriber?.nickname}' }`);
 
+      this.stopSocketReconnection();
       await super.disconnect();
     } finally {
       this.connected = false;
 
       // Notify UI based on bot type
-      if (this.botManager?.socket) {
+      if (shouldNotifyClient && this.botManager?.socket) {
         const eventMap = {
           main: updateEvents.bots.main.disconnected,
           room: updateEvents.bots.room.disconnected,
