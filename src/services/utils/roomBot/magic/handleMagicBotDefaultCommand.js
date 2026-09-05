@@ -7,8 +7,7 @@ import { getChannelList } from '../getUsersIDs.js';
 import {
   assertRoomAccountClassificationCapacity,
   assertRoomBotPoolCapacity,
-  ensureClassificationBots,
-  reserveClassificationCapacityForRoomBots
+  ensureClassificationBots
 } from '../../classification/classificationPool.js';
 import {
   assertRoomConnectionCooldownComplete,
@@ -23,7 +22,6 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
     assertConnectionBatchAvailable(botManager, 'room');
     const futureRoomBotCount = botManager.getRoomBots().length + 1;
     assertRoomBotPoolCapacity(futureRoomBotCount);
-    await reserveClassificationCapacityForRoomBots(botManager, futureRoomBotCount);
     botManager.addNewRoomBotToken(commandName);
     // Connect the room bot
     let newRoomBot;

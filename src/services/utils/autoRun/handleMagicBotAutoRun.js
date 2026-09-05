@@ -42,7 +42,6 @@ export const handleMagicBotAutoRun = async (botManager) => {
       throw new Error('Failed to connect all room bots');
     }
     const roomBots = botManager.getRoomBots();
-    await ensureClassificationBots(botManager);
 
     // Get all channel lists in parallel
     const channelResults = await Promise.all(
@@ -54,6 +53,7 @@ export const handleMagicBotAutoRun = async (botManager) => {
       await botManager.clearRoomBots();
       throw error;
     }
+    await ensureClassificationBots(botManager);
 
     // Extract all channel IDs
     let channelIds = [];

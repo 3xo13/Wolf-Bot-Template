@@ -19,9 +19,9 @@ function createProxyAgent (proxy) {
     : new HttpsProxyAgent(url);
 }
 
-export function buildAnonymousConnection (config) {
-  const host = String(config.host || 'wss://v3.palringo.com').replace(/^wss:/, 'https:');
-  const agent = createProxyAgent(config.proxy);
+export function buildAnonymousConnection (config = {}) {
+  const host = String(config?.host || 'wss://v3.palringo.com').replace(/^wss:/, 'https:');
+  const agent = createProxyAgent(config?.proxy);
   const options = {
     transports: ['websocket'],
     reconnection: true,
@@ -33,6 +33,10 @@ export function buildAnonymousConnection (config) {
   };
   if (agent) { options.agent = agent; }
   return { url: `${host}:${config.port || 443}/`, options };
+}
+
+export function getClassificationConnectionConfig (manager) {
+  return manager.config.classificationBotConfig || {};
 }
 
 export default class AnonymousClassificationBot {
@@ -60,7 +64,7 @@ export default class AnonymousClassificationBot {
   async connect () {
     if (this.connected || this.socket?.connected) { return this; }
     this.closed = false;
-    const config = this.manager.config.roomBotConfig;
+    const config = getClassificationConnectionConfig(this.manager);
     const { url, options } = buildAnonymousConnection(config);
     this.socket = io(url, options);
 

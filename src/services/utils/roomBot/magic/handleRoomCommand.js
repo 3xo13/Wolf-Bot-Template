@@ -13,8 +13,7 @@ import handleBotStepReplay from '../../steps/handleBotStepReplay.js';
 import {
   assertRoomAccountClassificationCapacity,
   assertRoomBotPoolCapacity,
-  ensureClassificationBots,
-  reserveClassificationCapacityForRoomBots
+  ensureClassificationBots
 } from '../../classification/classificationPool.js';
 import {
   assertRoomConnectionCooldownComplete,
@@ -57,7 +56,6 @@ export const handleRoomCommand = async (token, botManager) => {
 
     const futureRoomBotCount = botManager.getRoomBots().length + 1;
     assertRoomBotPoolCapacity(futureRoomBotCount);
-    await reserveClassificationCapacityForRoomBots(botManager, futureRoomBotCount);
     // Set the room bot token in botManager
     botManager.addNewRoomBotToken(token);
     // Connect the room bot

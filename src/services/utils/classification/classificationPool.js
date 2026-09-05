@@ -2,18 +2,18 @@ import AnonymousClassificationBot from '../../AnonymousClassificationBot.js';
 import { classifySubscriberPatch } from './classifySubscribers.js';
 import { queueEligibleActivities, queueEligibleActivity } from './magicQueue.js';
 
-export const MAX_ROOM_AND_CLASSIFICATION_BOTS = 145;
-export const MAX_ROOMS_PER_ACCOUNT = MAX_ROOM_AND_CLASSIFICATION_BOTS - 10;
+export const MAX_ROOM_BOTS = 145;
+export const MAX_ROOMS_PER_ACCOUNT = MAX_ROOM_BOTS;
 
 export function assertRoomAccountClassificationCapacity (roomCount) {
   if (roomCount > MAX_ROOMS_PER_ACCOUNT) {
-    throw new Error(`لا يمكن استخدام حساب رومات يحتوي على أكثر من ${MAX_ROOMS_PER_ACCOUNT} روم، لضمان توفر 10 حسابات على الأقل للتصنيف`);
+    throw new Error(`لا يمكن استخدام حساب رومات يحتوي على أكثر من ${MAX_ROOMS_PER_ACCOUNT} روم`);
   }
 }
 
 export function assertRoomBotPoolCapacity (roomBotCount) {
   if (roomBotCount > MAX_ROOMS_PER_ACCOUNT) {
-    throw new Error(`لا يمكن تشغيل أكثر من ${MAX_ROOMS_PER_ACCOUNT} حساب روم، لضمان توفر 10 حسابات على الأقل للتصنيف`);
+    throw new Error(`لا يمكن تشغيل أكثر من ${MAX_ROOMS_PER_ACCOUNT} حساب روم`);
   }
 }
 
@@ -22,9 +22,7 @@ export function getClassificationBotTarget (roomCount, userCount) {
   if (roomCount < 3 && userCount > 5000) {
     lowRoomTarget = userCount < 50000 ? 3 : 5;
   }
-  const desiredTarget = Math.max(roomCount, lowRoomTarget);
-  const availableSlots = Math.max(0, MAX_ROOM_AND_CLASSIFICATION_BOTS - roomCount);
-  return Math.min(desiredTarget, availableSlots);
+  return Math.max(roomCount, lowRoomTarget);
 }
 
 async function trimClassificationBots (botManager, target) {
@@ -32,15 +30,6 @@ async function trimClassificationBots (botManager, target) {
   const removed = botManager.classificationBots.splice(target);
   await Promise.allSettled(removed.map(bot => bot.disconnect()));
   botManager.emitClassificationBotCount();
-}
-
-export async function reserveClassificationCapacityForRoomBots (botManager, futureRoomBotCount) {
-  assertRoomBotPoolCapacity(futureRoomBotCount);
-  if (!botManager.config.baseConfig.excludeAdmins) { return; }
-  await trimClassificationBots(
-    botManager,
-    getClassificationBotTarget(futureRoomBotCount, botManager.seenUsers.size)
-  );
 }
 
 export async function ensureClassificationBots (botManager, userCount = botManager.seenUsers.size) {

@@ -19,10 +19,12 @@ import {
   getClassificationBotTarget,
   startClassificationWorkers,
   assertRoomAccountClassificationCapacity,
-  assertRoomBotPoolCapacity,
-  reserveClassificationCapacityForRoomBots
+  assertRoomBotPoolCapacity
 } from '../src/services/utils/classification/classificationPool.js';
-import AnonymousClassificationBot, { buildAnonymousConnection } from '../src/services/AnonymousClassificationBot.js';
+import AnonymousClassificationBot, {
+  buildAnonymousConnection,
+  getClassificationConnectionConfig
+} from '../src/services/AnonymousClassificationBot.js';
 import { sendUpdateEvent } from '../src/services/utils/updates/sendUpdateEvent.js';
 import { buildStateReport } from '../src/services/utils/handleStateReport.js';
 import { queueEligibleActivities, queueEligibleActivity } from '../src/services/utils/classification/magicQueue.js';
@@ -622,42 +624,30 @@ test('classification pool scales at the specified boundaries', () => {
   assert.equal(getClassificationBotTarget(4, 50000), 4);
   assert.equal(getClassificationBotTarget(6, 50000), 6);
   assert.equal(getClassificationBotTarget(72, 100000), 72);
-  assert.equal(getClassificationBotTarget(73, 100000), 72);
-  assert.equal(getClassificationBotTarget(75, 100000), 70);
-  assert.equal(getClassificationBotTarget(76, 100000), 69);
-  assert.equal(getClassificationBotTarget(100, 100000), 45);
-  assert.equal(getClassificationBotTarget(135, 100000), 10);
+  assert.equal(getClassificationBotTarget(73, 100000), 73);
+  assert.equal(getClassificationBotTarget(75, 100000), 75);
+  assert.equal(getClassificationBotTarget(100, 100000), 100);
+  assert.equal(getClassificationBotTarget(145, 100000), 145);
 });
 
-test('room capacity reserves at least ten of the 145 connection slots', async () => {
-  assert.doesNotThrow(() => assertRoomAccountClassificationCapacity(135));
-  assert.throws(() => assertRoomAccountClassificationCapacity(136), /135/);
-  assert.doesNotThrow(() => assertRoomBotPoolCapacity(135));
-  assert.throws(() => assertRoomBotPoolCapacity(136), /135/);
+test('room and classification pools have independent 145-bot capacity', async () => {
+  assert.doesNotThrow(() => assertRoomAccountClassificationCapacity(145));
+  assert.throws(() => assertRoomAccountClassificationCapacity(146), /145/);
+  assert.doesNotThrow(() => assertRoomBotPoolCapacity(145));
+  assert.throws(() => assertRoomBotPoolCapacity(146), /145/);
 
   const botManager = manager();
-  botManager.roomBots = Array.from({ length: 76 }, () => ({ connected: true }));
+  botManager.roomBots = Array.from({ length: 145 }, () => ({ connected: true }));
   let disconnected = 0;
-  botManager.classificationBots = Array.from({ length: 75 }, () => ({
+  botManager.classificationBots = Array.from({ length: 145 }, () => ({
     connected: true,
     disconnect: async () => { disconnected++; }
   }));
   await ensureClassificationBots(botManager, 100000);
 
-  assert.equal(botManager.classificationBots.length, 69);
-  assert.equal(botManager.roomBots.length + botManager.classificationBots.length, 145);
-  assert.equal(disconnected, 6);
-
-  const crossingManager = manager();
-  crossingManager.roomBots = Array.from({ length: 75 }, () => ({ connected: true }));
-  crossingManager.classificationBots = Array.from({ length: 75 }, () => ({
-    connected: true,
-    disconnect: async () => {}
-  }));
-  await reserveClassificationCapacityForRoomBots(crossingManager, 76);
-  assert.equal(crossingManager.roomBots.length + crossingManager.classificationBots.length, 144);
-  assert.equal(crossingManager.classificationBots.length, 69);
-  assert.equal(76 + crossingManager.classificationBots.length, 145);
+  assert.equal(botManager.roomBots.length, 145);
+  assert.equal(botManager.classificationBots.length, 145);
+  assert.equal(disconnected, 0);
 });
 
 test('classification is completely bypassed when exclusion is disabled', async () => {
@@ -684,6 +674,37 @@ test('classification connection is anonymous and identifies as web', () => {
   assert.deepEqual(options.query, { device: 'web' });
   assert.equal('auth' in options, false);
   assert.equal('token' in options, false);
+});
+
+test('classification connections use only their dedicated optional proxy', () => {
+  const classificationConfig = {
+    host: 'wss://v3.palringo.com',
+    port: 443,
+    proxy: { enabled: true, host: '127.0.0.2', port: 8080, protocol: 'http' }
+  };
+  const botManager = {
+    config: {
+      roomBotConfig: {
+        proxy: { enabled: true, host: '127.0.0.1', port: 9000, protocol: 'http' }
+      },
+      classificationBotConfig: classificationConfig
+    }
+  };
+
+  assert.equal(getClassificationConnectionConfig(botManager), classificationConfig);
+  assert.ok(buildAnonymousConnection(classificationConfig).options.agent);
+
+  const incompleteConfig = {
+    host: 'wss://v3.palringo.com',
+    port: 443,
+    proxy: { enabled: true, host: '127.0.0.2', port: 0, protocol: 'http' }
+  };
+  assert.equal('agent' in buildAnonymousConnection(incompleteConfig).options, false);
+
+  const legacyManager = { config: { roomBotConfig: botManager.config.roomBotConfig } };
+  const legacyConfig = getClassificationConnectionConfig(legacyManager);
+  assert.deepEqual(legacyConfig, {});
+  assert.equal('agent' in buildAnonymousConnection(legacyConfig).options, false);
 });
 
 test('compact classifications survive an extended-profile failure', async () => {

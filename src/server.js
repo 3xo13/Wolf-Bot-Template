@@ -80,6 +80,17 @@ io.on('connection', async (clientSocket) => {
             port: request.roomBotConfig.port
           }
         },
+        classificationBotConfig: {
+          ...WOLF_CONFIG,
+          token: '',
+          device: 'web',
+          proxy: {
+            ...WOLF_CONFIG.proxy,
+            enabled: !!(request.classificationBotConfig?.host && request.classificationBotConfig?.port),
+            host: request.classificationBotConfig?.host || '',
+            port: request.classificationBotConfig?.port || 0
+          }
+        },
         adBotConfig: [
           ...request.adBotConfig.map(adBot => ({
             ...WOLF_CONFIG,
