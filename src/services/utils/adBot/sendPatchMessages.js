@@ -83,7 +83,7 @@ async function sendPatchMessages (botManager) {
             setLastUserIndex(currentIndex + i + 1);
             setMessagesDeliveredTo([userId]);
             const message = messages[0];
-            sendPrivateMessage(userId, message, bot);
+            sendPrivateMessage(userId, message, bot).catch(() => {});
             // if (hasLink(text)) {
             //   const res = await sendPrivateMessage(userId, text, bot);
             //   console.log('🚀 ~ sendPatchMessages ~ res:', res);
@@ -116,7 +116,7 @@ async function sendPatchMessages (botManager) {
                 console.warn('No message text for index', m);
                 continue;
               }
-              sendPrivateMessage(userId, message, bot);
+              sendPrivateMessage(userId, message, bot).catch(() => {});
               // if (hasLink(text)) {
               //   const res = await sendPrivateMessage(userId, text, bot);
               //   console.log('🚀 ~ sendPatchMessages ~ res:', res);

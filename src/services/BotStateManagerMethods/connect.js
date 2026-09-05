@@ -10,9 +10,8 @@ async function loginOrDispose (bot, config) {
   } catch (error) {
     // A failed initial login is not owned by the manager yet. Stop Socket.IO's
     // automatic reconnection so it cannot survive as an orphan connection.
-    bot.connected = false;
     try { bot.stopSocketReconnection?.(); } catch {}
-    try { await bot.websocket?.disconnect(); } catch {}
+    try { await bot.disconnect?.(); } catch {}
     throw error;
   }
 }

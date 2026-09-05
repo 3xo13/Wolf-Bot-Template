@@ -58,7 +58,7 @@ async function sendPatchMessages (botManager, patch) {
           timer.setMinutes(timer.getMinutes() + minutesTimer);
 
           botManager.updateChannelUserTimer(userId, timer.getTime());
-          sendPrivateMessage(userId, messages[0], bot.bot);
+          sendPrivateMessage(userId, messages[0], bot.bot).catch(() => {});
           // if (hasLink(messages[0])) {
           //   const res = await sendPrivateMessage(userId, messages[0], bot.bot);
           //   console.log('🚀 ~ sendPatchMessages ~ res:', res);
@@ -82,7 +82,7 @@ async function sendPatchMessages (botManager, patch) {
               break;
             }
             const message = messages[m];
-            sendPrivateMessage(userId, message, bot.bot);
+            sendPrivateMessage(userId, message, bot.bot).catch(() => {});
             // if (hasLink(message)) {
             //   const res = await sendPrivateMessage(userId, message, bot.bot);
             //   console.log('🚀 ~ sendPatchMessages ~ res:', res);

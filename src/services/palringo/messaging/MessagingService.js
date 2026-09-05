@@ -91,7 +91,13 @@ export default class MessagingService {
     });
     const responses = [];
     for (const message of messages) {
-      responses.push(await this.client.request(COMMANDS.messageSend, message, options.request));
+      responses.push(await this.client.request(COMMANDS.messageSend, message, {
+        ...options.request,
+        // Keep the response contract used by wolf.js: a rejected message is a
+        // completed request with a non-success response, not a thrown error.
+        // Connection and acknowledgement failures still reject normally.
+        throwOnFailure: false
+      }));
     }
     return responses.length === 1
       ? responses[0]

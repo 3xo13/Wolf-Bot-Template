@@ -55,7 +55,7 @@ export const handleAdAccountCommand = async (botManager, data) => {
         `حساب الاعلان رقم ( ${currentAdBotIndex + 1} ) متصل بنجاح
         يرجى إرسال "حساب اعلان" مع توكين الحساب رقم ( ${currentAdBotIndex + 2} )`,
         mainBot, mainBot
-      );
+      ).catch(() => {});
       return;
     }
 

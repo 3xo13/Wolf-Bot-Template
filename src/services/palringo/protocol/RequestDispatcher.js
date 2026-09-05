@@ -32,6 +32,7 @@ export default class RequestDispatcher {
           attempt
         });
         if (!this.retryableCodes.has(Number(response?.code)) || attempt === maxAttempts) {
+          if (options.throwOnFailure === false) { return response; }
           throw lastError;
         }
       } catch (error) {

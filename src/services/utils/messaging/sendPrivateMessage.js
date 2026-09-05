@@ -63,6 +63,9 @@ export async function sendPrivateMessage (subscriberId, message, client, mainBot
     console.error('Full error:', {
       name: error.name,
       message: error.message,
+      code: error.code,
+      response: error.response,
+      cause: error.cause,
       stack: error.stack,
       targetId,
       messageText: message.toString()

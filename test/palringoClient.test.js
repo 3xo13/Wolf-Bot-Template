@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
+import CustomWOLF from '../src/services/CustomWOLF.js';
 import MemberService from '../src/services/palringo/channels/MemberService.js';
 import { COMMANDS } from '../src/services/palringo/constants.js';
 import { PalringoClient, PalringoConnectionError } from '../src/services/palringo/index.js';
@@ -27,7 +28,6 @@ class FakeSocket extends EventEmitter {
     this.anyListeners = new Set();
     this.requests = [];
     this.disconnected = false;
-    this.volatile = { emit: (...args) => this.emitRequest(...args) };
   }
 
   onAny (listener) {
@@ -51,6 +51,14 @@ class FakeSocket extends EventEmitter {
     this.disconnected = true;
     this.connected = false;
     return this;
+  }
+
+  emit (event, ...args) {
+    if (typeof args.at(-1) === 'function') {
+      this.emitRequest(event, ...args);
+      return true;
+    }
+    return super.emit(event, ...args);
   }
 
   emitRequest (event, payload, acknowledge) {
@@ -94,6 +102,42 @@ test('request dispatcher does not retry transport failures by default', async ()
 
   await assert.rejects(dispatcher.request('sample command', {}), /Request failed/u);
   assert.equal(calls, 1);
+});
+
+test('request dispatcher can return a final protocol failure without hiding transport failures', async () => {
+  const protocolFailure = { code: 403, body: { reason: 'recipient unavailable' } };
+  const dispatcher = new RequestDispatcher({
+    emitWithAck: async () => protocolFailure
+  }, { maxRequestAttempts: 1, retryDelay: 0 });
+
+  assert.equal(
+    await dispatcher.request('message send', {}, { throwOnFailure: false }),
+    protocolFailure
+  );
+});
+
+test('messaging preserves wolf.js non-success response semantics', async () => {
+  const socket = new FakeSocket();
+  socket.emitRequest = function (event, payload, acknowledge) {
+    this.requests.push({ event, payload });
+    queueMicrotask(() => acknowledge(
+      event === COMMANDS.messageSend
+        ? { code: 403, body: { reason: 'recipient unavailable' } }
+        : { code: 200, body: [] }
+    ));
+  };
+  const client = new PalringoClient({
+    token: 'WE-test',
+    connectTimeout: 100,
+    authenticationTimeout: 100
+  }, { socketFactory: () => socket });
+  await client.connect();
+
+  const response = await client.messaging.sendPrivateMessage(84035866, 'سلام');
+
+  assert.equal(response.code, 403);
+  assert.equal(socket.requests.at(-1).event, COMMANDS.messageSend);
+  await client.destroy();
 });
 
 test('text messages are bounded and retain link metadata', async () => {
@@ -202,4 +246,21 @@ test('failed initial transport is disposed without waiting for authentication ti
   assert.equal(socket.disconnected, true);
   assert.equal(client.transport.socket, null);
   assert.equal(client.state, 'disconnected');
+});
+
+test('application adapter logs in through PalringoClient and establishes main subscriptions', async () => {
+  const socket = new FakeSocket({ subscriber: { id: 84, nickname: 'manager' } });
+  const bot = new CustomWOLF(null, 'main', { socketFactory: () => socket });
+
+  const subscriber = await bot.login({ token: 'WE-test' });
+
+  assert.equal(subscriber.id, 84);
+  assert.equal(bot.connected, true);
+  assert.deepEqual(socket.requests.map(request => request.event), [
+    COMMANDS.messagePrivateSubscribe,
+    COMMANDS.messageGroupSubscribe
+  ]);
+
+  await bot.disconnect();
+  assert.equal(bot.connected, false);
 });

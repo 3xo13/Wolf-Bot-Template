@@ -110,6 +110,6 @@ export const handleMagicBotAutoRun = async (botManager) => {
     await handleAdRunCommand(botManager);
   } catch (error) {
     console.log('🚀 ~ handleMagicBotAutoRun ~ error:', error);
-    sendPrivateMessage(botManager.config.baseConfig.orderFrom, error.message, mainBot);
+    sendPrivateMessage(botManager.config.baseConfig.orderFrom, error.message, mainBot).catch(() => {});
   }
 };

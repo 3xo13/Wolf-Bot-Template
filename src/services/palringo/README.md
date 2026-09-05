@@ -1,6 +1,6 @@
 # Palringo client
 
-This folder contains a standalone, application-focused WOLF protocol client. It is intentionally not imported by the running bot yet and is not a separate package. Its transport, proxy, and ID generation dependencies come from the server's existing `package.json`.
+This folder contains the application-focused WOLF protocol client used by the server. It is not a separate package; its transport, proxy, and ID generation dependencies come from the server's existing `package.json`.
 
 The public facade is `PalringoClient`. Its responsibilities are split across transport, request dispatching, messaging, channel/member access, stage subscriptions, and event normalization.
 
@@ -39,4 +39,4 @@ await client.stage.listSlots(channels[0].id);
 
 Requests are never queued while disconnected. Every request has an acknowledgement timeout and a bounded retry count. Runtime disconnect, objection, and reconnect events remain observable for the entire client lifetime.
 
-The façade also exposes the narrow compatibility surface used by this application: `login(config)`, `channel.list()`, `websocket.emit()`, `messaging._subscribeToChannel()`, and `stage.slot.list()`. These aliases are included to make a later controlled migration possible; they do not modify or replace `CustomWOLF` today.
+The façade also exposes the narrow compatibility surface used by this application: `login(config)`, `channel.list()`, `websocket.emit()`, `messaging._subscribeToChannel()`, and `stage.slot.list()`. `CustomWOLF` now extends this client and contains only the manager-specific adapter behavior.

@@ -535,7 +535,7 @@ test('room disconnect disables Socket.IO reconnection even between connections',
   const roomBot = Object.create(CustomWOLF.prototype);
   roomBot.botType = 'room';
   roomBot.botManager = botManager;
-  roomBot.connected = false;
+  roomBot.transport = { close: async () => {} };
   roomBot.websocket = {
     socket: {
       connected: false,

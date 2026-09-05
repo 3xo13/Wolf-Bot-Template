@@ -21,8 +21,7 @@
     "redis-lock": "^0.1.4",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
-    "socks-proxy-agent": "^8.0.5",
-    "wolf.js": "^2.7.2"
+    "socks-proxy-agent": "^8.0.5"
   },
   "devDependencies": {
     "@eslint-community/eslint-plugin-eslint-comments": "^4.5.0",

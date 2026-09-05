@@ -58,6 +58,7 @@ export default class SocketTransport extends EventEmitter {
     });
     this.socket.on('disconnect', reason => {
       this.connected = false;
+      if (Array.isArray(this.socket?.sendBuffer)) { this.socket.sendBuffer.length = 0; }
       this.rejectPending(new PalringoConnectionError('Connection interrupted', { reason }));
       this.emit('disconnect', reason);
       if (!this.closed && reason === 'io server disconnect') {
@@ -133,8 +134,7 @@ export default class SocketTransport extends EventEmitter {
       this.pendingRequests.add(pending);
 
       try {
-        const emitter = this.socket.volatile?.emit ? this.socket.volatile : this.socket;
-        emitter.emit(event, payload, response => finish(resolve, response));
+        this.socket.emit(event, payload, response => finish(resolve, response));
       } catch (error) {
         finish(reject, error);
       }
