@@ -1,61 +1,42 @@
 import { updateEvents } from '../constants/updateEvents.js';
 import { sendPrivateMessage } from '../messaging/sendPrivateMessage.js';
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
+import {
+  getConnectedAdBots,
+  isAdCampaignActive,
+  waitForConnectedAdBot
+} from './campaignAvailability.js';
 
 function waitMilliseconds (milliseconds) {
-  if (milliseconds <= 0) {
-    return Promise.resolve();
-  }
-  return new Promise(resolve => setTimeout(resolve, milliseconds));
+  return milliseconds > 0
+    ? new Promise(resolve => setTimeout(resolve, milliseconds))
+    : Promise.resolve();
 }
 
-const hasLink = (string) => {
-  const urlPattern = /https?:\/\/[^\s]+|www\.[^\s]+|\[.+?\]\(.+?\)/g;
-  return urlPattern.test(string);
-};
-
-function extractAdBotPatchState (botManager) {
-  return {
-    // messages: callers should use botManager.getMessages() — messages are built per-send
-    adBots: botManager.getAdBots(),
-    messageCount: botManager.getMessageCount(),
-    users: botManager.getUsers(),
-    messagesDeliveredTo: botManager.getMessagesDeliveredTo(),
-    lastUserIndex: botManager.getLastUserIndex(),
-    setMessagesDeliveredTo: arr => botManager.setMessagesDeliveredTo(arr),
-    setLastUserIndex: idx => botManager.setLastUserIndex(idx),
-    setMessageCount: count => botManager.setMessageCount(count)
-  };
+function recordMemberDispatch (botManager, userId, nextIndex) {
+  botManager.setLastUserIndex(nextIndex);
+  botManager.setMessagesDeliveredTo([userId]);
+  sendUpdateEvent(botManager, updateEvents.ad.update, { adsSent: nextIndex });
 }
-async function sendPatchMessages (botManager) {
-  const generation = botManager._classificationGeneration;
+
+async function sendPatchMessages (botManager, campaignGeneration) {
+  const classificationGeneration = botManager._classificationGeneration;
   const messages = botManager.getMessages();
-  if (!Array.isArray(messages) || !messages.length) {
-    throw new Error('No messages to send');
-  }
-  const waitTimeMilliseconds = botManager.getMessageCount() === 1
+  if (!messages.length) { throw new Error('No messages to send'); }
+
+  const messageCount = botManager.getMessageCount();
+  const patchInterval = messageCount === 1
     ? botManager.config.baseConfig.singleMessageMillisecInterval || 0
-    : botManager.getMessageCount() === 3
+    : messageCount === 3
       ? botManager.config.baseConfig.multiMessageMillisecInterval || 0
       : 0;
-
-  const accountsWaitTime = botManager.config.baseConfig.accountsMillisecInterval || 0;
-
-  const betweenMessagesMillisecInterval = botManager.config.baseConfig.betweenMessagesMillisecInterval || 0;
-
-  const {
-    adBots,
-    messageCount,
-    lastUserIndex,
-    setMessagesDeliveredTo,
-    setLastUserIndex
-  } = extractAdBotPatchState(botManager);
-
-  let currentIndex = lastUserIndex;
-  const patchSize = adBots.length;
+  const accountInterval = botManager.config.baseConfig.accountsMillisecInterval || 0;
+  const messageInterval = botManager.config.baseConfig.betweenMessagesMillisecInterval || 0;
+  let currentIndex = botManager.getLastUserIndex();
 
   try {
-    while (!botManager.isClassificationCancelled(generation)) {
+    while (!botManager.isClassificationCancelled(classificationGeneration) &&
+      isAdCampaignActive(botManager, campaignGeneration)) {
       const users = botManager.getUsers();
       if (currentIndex >= users.length) {
         if (botManager.hasPendingClassification()) {
@@ -64,99 +45,75 @@ async function sendPatchMessages (botManager) {
         }
         break;
       }
-      let patchUsers = [];
-      if (patchSize >= users.length - currentIndex) {
-        patchUsers = users.slice(currentIndex);
-      } else {
-        patchUsers = users.slice(currentIndex, currentIndex + patchSize);
+
+      if (!getConnectedAdBots(botManager).length) {
+        if (!await waitForConnectedAdBot(botManager, campaignGeneration)) { return 'cancelled'; }
+        continue;
       }
-      if (messageCount === 1) {
-        // Each bot sends one message to one user
-        for (let i = 0; i < patchUsers.length; i++) {
-          const userId = patchUsers[i];
-          const bot = adBots[i];
-          bot.setIsWorking(true);
-          if (bot) {
-            sendUpdateEvent(botManager, updateEvents.ad.update, {
-              adsSent: currentIndex + i + 1
-            });
-            setLastUserIndex(currentIndex + i + 1);
-            setMessagesDeliveredTo([userId]);
-            const message = messages[0];
-            sendPrivateMessage(userId, message, bot).catch(() => {});
-            // if (hasLink(text)) {
-            //   const res = await sendPrivateMessage(userId, text, bot);
-            //   console.log('🚀 ~ sendPatchMessages ~ res:', res);
-            // } else {
-            //   sendPrivateMessage(userId, text, bot);
-            // }
+      const availableBots = getConnectedAdBots(botManager, { availableOnly: true });
+      if (!availableBots.length) {
+        await waitMilliseconds(100);
+        continue;
+      }
 
-            await waitMilliseconds(accountsWaitTime);
-          }
-        }
+      let sentInPatch = 0;
+      const usedBots = [];
+      for (const bot of availableBots) {
+        if (currentIndex >= users.length || !isAdCampaignActive(botManager, campaignGeneration)) { break; }
+        if (!bot.connected || bot.isBusy || bot.isWorking) { continue; }
 
-        currentIndex += patchUsers.length;
-        await waitMilliseconds(waitTimeMilliseconds);
-        if (botManager.isAdBotsTimerLessThanOneMinute()) {
-          adBots.forEach(bot => {
-            bot.setIsBusy(true);
-            bot.setIsWorking(false);
-          });
-        }
-      } else if (messageCount === 3) {
-        // Each bot sends three messages to each user in the patch
-        for (let i = 0; i < patchUsers.length; i++) {
-          const userId = patchUsers[i];
-          const bot = adBots[i];
-          bot.setIsWorking(true);
-          if (bot) {
-            for (let m = 0; m < Math.min(3, messages.length); m++) {
-              const message = messages[m];
-              if (!message) {
-                console.warn('No message text for index', m);
-                continue;
-              }
-              sendPrivateMessage(userId, message, bot).catch(() => {});
-              // if (hasLink(text)) {
-              //   const res = await sendPrivateMessage(userId, text, bot);
-              //   console.log('🚀 ~ sendPatchMessages ~ res:', res);
-              // } else {
-              //   await sendPrivateMessage(userId, text, bot);
-              // }
-              if (m !== 2) {
-                await waitMilliseconds(betweenMessagesMillisecInterval);
-              }
+        const userId = users[currentIndex];
+        let dispatched = false;
+        bot.setIsWorking(true);
+        usedBots.push(bot);
+
+        if (messageCount === 1 && messages[0]) {
+          currentIndex++;
+          dispatched = true;
+          recordMemberDispatch(botManager, userId, currentIndex);
+          sendPrivateMessage(userId, messages[0], bot).catch(() => {});
+        } else if (messageCount === 3) {
+          for (const message of messages.slice(0, 3)) {
+            if (!bot.connected || !isAdCampaignActive(botManager, campaignGeneration)) { break; }
+            if (!message) { continue; }
+            if (!dispatched) {
+              currentIndex++;
+              dispatched = true;
+              recordMemberDispatch(botManager, userId, currentIndex);
             }
-            await waitMilliseconds(accountsWaitTime);
+            sendPrivateMessage(userId, message, bot).catch(() => {});
+            await waitMilliseconds(messageInterval);
           }
-          setMessagesDeliveredTo([userId]);
-          setLastUserIndex(currentIndex + i + 1);
-          sendUpdateEvent(botManager, updateEvents.ad.update, {
-            adsSent: currentIndex + i + 1
-          });
+        } else {
+          throw new Error('Unsupported message count. Only 1 or 3 are allowed.');
         }
-        currentIndex += patchUsers.length;
 
-        await waitMilliseconds(waitTimeMilliseconds);
-        if (botManager.isAdBotsTimerLessThanOneMinute()) {
-          adBots.forEach(bot => {
-            bot.setIsBusy(true);
-            bot.setIsWorking(false);
-          });
+        if (dispatched) {
+          sentInPatch++;
+          await waitMilliseconds(accountInterval);
         }
-      } else {
-        throw new Error('Unsupported message count. Only 1 or 3 are allowed.');
+        bot.setIsWorking(false);
+      }
+
+      usedBots.forEach(bot => bot.setIsWorking(false));
+      if (!sentInPatch) { continue; }
+      await waitMilliseconds(patchInterval);
+      if (botManager.isAdBotsTimerLessThanOneMinute()) {
+        usedBots.forEach(bot => bot.setIsBusy(true));
       }
     }
+
+    return isAdCampaignActive(botManager, campaignGeneration) ? 'completed' : 'cancelled';
   } catch (error) {
-    if (botManager.isClassificationCancelled(generation)) { return; }
+    if (botManager.isClassificationCancelled(classificationGeneration)) { return 'cancelled'; }
     console.error('Error sending patch messages:', error);
-    await sendPrivateMessage(botManager.config.baseConfig.orderFrom, error.message, botManager.getMainBot());
-  } finally {
-    adBots.forEach(bot => botManager.removeBot('ad', bot));
-    await Promise.allSettled(adBots.map(bot => bot.disconnect()));
+    await sendPrivateMessage(
+      botManager.config.baseConfig.orderFrom,
+      error.message,
+      botManager.getMainBot()
+    );
+    return 'cancelled';
   }
 }
 
-// Export the function for use
 export { sendPatchMessages };

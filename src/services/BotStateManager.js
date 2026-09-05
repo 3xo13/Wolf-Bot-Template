@@ -16,6 +16,7 @@ import {
   startSlowUnknownRetry
 } from './utils/classification/unknownUsers.js';
 import { clearAuthenticatedConnectionCooldowns } from './utils/roomBot/roomConnectionCooldown.js';
+import { cancelAdCampaignMonitor } from './utils/adBot/campaignAvailability.js';
 
 class BotStateManager {
   constructor (config) {
@@ -66,6 +67,14 @@ class BotStateManager {
     this.adConnectionCooldownTimer = null;
     this.adConnectionCooldownNextCommand = null;
     this._recipientWaiters = new Set();
+    this._campaignGeneration = 0;
+    this._adCampaignActive = false;
+    this._adCampaignOfflineSince = 0;
+    this._adCampaignOutageTimer = null;
+    this._adCampaignOutageTimeoutMs = 0;
+    this._adCampaignAbortPromise = null;
+    this._adAvailabilityWaiters = new Set();
+    this._adCampaignBotListeners = new Map();
     this.messagesDeliverdeTo = new Set(); // Set of user IDs to whom messages have been delivered
     this.lastUserIndex = 0;
     this.channels = new Map(); // Map of channelId -> channel info
@@ -445,6 +454,7 @@ class BotStateManager {
     if (this._disconnectCleanupPromise) { return this._disconnectCleanupPromise; }
     this._destroyed = true;
     this.isReseting = true;
+    cancelAdCampaignMonitor(this);
     this.cancelClassification();
     this.messageCount = 0;
     this.messages.clear();
@@ -465,6 +475,7 @@ class BotStateManager {
     // managed bot arrays. A login that completes after this point must dispose
     // itself instead of becoming an untracked connection.
     this._connectionGeneration++;
+    cancelAdCampaignMonitor(this);
     clearAuthenticatedConnectionCooldowns(this);
     this.isReseting = true;
     this.cancelClassification();

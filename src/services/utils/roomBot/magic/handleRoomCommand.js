@@ -5,7 +5,6 @@ import setStepState from '../../steps/setStepState.js';
 import { sendUpdateEvent } from '../../updates/sendUpdateEvent.js';
 import { getChannelList } from '../getUsersIDs.js';
 import { updateEvents } from '../../constants/updateEvents.js';
-import { magicBotSteps } from '../../constants/magicBotSteps.js';
 import { userMessages } from '../../constants/userMessages.js';
 import { updateTimers } from '../../../helpers/updateTimers.js';
 import { checkBotStep } from '../../steps/checkBotStep.js';
@@ -20,6 +19,10 @@ import {
   startRoomConnectionCooldown
 } from '../roomConnectionCooldown.js';
 import { assertConnectionBatchAvailable, connectBotBatch, CONNECTION_BATCH_BUSY } from '../../connections/connectBotBatch.js';
+import {
+  buildNextRoomAccountMessage,
+  buildRoomAccountsCompleteMessage
+} from './roomAccountMessages.js';
 
 /**
  * Handles the room bot setup command.
@@ -143,15 +146,16 @@ export const handleRoomCommand = async (token, botManager) => {
     if (instanceCount > botManager.getRoomBots().length) {
       await sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
-        userMessages.sendNextRoomABotToken,
+        buildNextRoomAccountMessage(botManager.getRoomBots().length, channelsIds.length),
         mainBot, mainBot
       );
     } else {
       await sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
-        `${magicBotSteps.room.description}
-         عدد الرومات ( ${channelsIds.length} )
-        ${magicBotSteps.room.nextStepMessage}`,
+        buildRoomAccountsCompleteMessage(
+          botManager.getRoomBots().length,
+          botManager.getChannels().length
+        ),
         mainBot, mainBot
       );
     }

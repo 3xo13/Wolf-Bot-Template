@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import BotStateManager from '../src/services/BotStateManager.js';
 import { classifySubscriberPatch } from '../src/services/utils/classification/classifySubscribers.js';
 import {
@@ -44,6 +45,15 @@ import { connectBotBatch } from '../src/services/utils/connections/connectBotBat
 import { rollbackAdAccountSetup } from '../src/services/utils/adBot/adAccountConnection.js';
 import { handleStopCommand } from '../src/services/utils/adBot/handleStopCommand.js';
 import { handleAdAccountCommand } from '../src/services/utils/adBot/handleAdAccountCommand.js';
+import {
+  cancelAdCampaignMonitor,
+  startAdCampaignMonitor
+} from '../src/services/utils/adBot/campaignAvailability.js';
+import { sendPatchMessages as sendNormalPatchMessages } from '../src/services/utils/adBot/sendPatchMessages.js';
+import {
+  buildNextRoomAccountMessage,
+  buildRoomAccountsCompleteMessage
+} from '../src/services/utils/roomBot/magic/roomAccountMessages.js';
 
 function manager () {
   return new BotStateManager({
@@ -76,6 +86,33 @@ const waitUntil = async (condition, timeout = 2000) => {
     await new Promise(resolve => setTimeout(resolve, 10));
   }
 };
+
+function reconnectableAdBot (send) {
+  const bot = new EventEmitter();
+  bot.connected = true;
+  bot.isWorking = false;
+  bot.isBusy = false;
+  bot.setIsWorking = value => { bot.isWorking = value; };
+  bot.setIsBusy = value => { bot.isBusy = value; };
+  bot.messaging = { sendPrivateMessage: send };
+  bot.disconnect = async () => {
+    bot.connected = false;
+    bot.disconnected = true;
+  };
+  return bot;
+}
+
+test('magic room-account prompts report the last account and final totals', () => {
+  const nextMessage = buildNextRoomAccountMessage(2, 37);
+  assert.match(nextMessage, /رقم \( 2 \)/u);
+  assert.match(nextMessage, /هذا الحساب: 37/u);
+  assert.match(nextMessage, /التالي/u);
+
+  const finalMessage = buildRoomAccountsCompleteMessage(3, 91);
+  assert.match(finalMessage, /إجمالي حسابات الرومات: 3/u);
+  assert.match(finalMessage, /إجمالي عدد الرومات: 91/u);
+  assert.match(finalMessage, /حساب اعلان/u);
+});
 
 test('only the selected seven platform privileges are excluded', () => {
   Object.values(EXCLUDED_PLATFORM_PRIVILEGES).forEach(mask => assert.equal(isPlatformPrivileged(mask), true));
@@ -190,6 +227,7 @@ test('a classified magic batch is distributed across all free ad bots', async ()
   botManager.messageCount = 1;
   const sends = [];
   botManager.adBots = Array.from({ length: 30 }, (_, index) => ({
+    connected: true,
     isWorking: false,
     isBusy: false,
     setIsWorking (value) { this.isWorking = value; },
@@ -218,6 +256,7 @@ test('magic patch reservation prevents repeat sends during the grace period', as
   botManager.messageCount = 1;
   const sends = [];
   botManager.adBots = Array.from({ length: 30 }, (_, index) => ({
+    connected: true,
     isWorking: false,
     isBusy: false,
     setIsWorking (value) { this.isWorking = value; },
@@ -241,6 +280,155 @@ test('magic patch reservation prevents repeat sends during the grace period', as
   assert.equal(sends.filter(send => send.userId === 30).length, 1);
   assert.equal(botManager.channelsAdsSent, 30);
   assert.equal(botManager.channelUsersToMessageQueue.size, 0);
+});
+
+test('magic messaging waits for authenticated ad-bot resume without consuming its member', async () => {
+  const botManager = manager();
+  botManager.config.baseConfig.botType = 'magic';
+  botManager.config.baseConfig.singleMessageMillisecInterval = 1;
+  botManager.config.baseConfig.accountsMillisecInterval = 1;
+  botManager.messages.add('advertisement');
+  botManager.messageCount = 1;
+  const sends = [];
+  const bot = reconnectableAdBot(async userId => { sends.push(userId); });
+  bot.connected = false;
+  botManager.adBots = [bot];
+  const generation = startAdCampaignMonitor(botManager);
+
+  await queueEligibleActivity(botManager, '501');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(sends, []);
+  assert.equal(botManager.channelsAdsSent, 0);
+  assert.equal(botManager.channelUsersToMessageQueue.has('501'), true);
+
+  bot.connected = true;
+  bot.emit('resume');
+  await waitUntil(() => sends.length === 1);
+  assert.equal(botManager.channelsAdsSent, 1);
+  assert.equal(botManager.channelUsersToMessageQueue.size, 0);
+  cancelAdCampaignMonitor(botManager, { generation });
+});
+
+test('normal messaging assigns every remaining member only to connected ad bots', async () => {
+  const botManager = manager();
+  botManager.config.baseConfig.singleMessageMillisecInterval = 1;
+  botManager.config.baseConfig.accountsMillisecInterval = 1;
+  botManager.messages.add('advertisement');
+  botManager.messageCount = 1;
+  ['1', '2', '3'].forEach(id => botManager.users.add(id));
+  const connectedSends = [];
+  const disconnectedSends = [];
+  const connectedBot = reconnectableAdBot(async userId => { connectedSends.push(userId); });
+  const disconnectedBot = reconnectableAdBot(async userId => { disconnectedSends.push(userId); });
+  disconnectedBot.connected = false;
+  botManager.adBots = [connectedBot, disconnectedBot];
+  const generation = startAdCampaignMonitor(botManager);
+
+  const outcome = await sendNormalPatchMessages(botManager, generation);
+
+  assert.equal(outcome, 'completed');
+  assert.deepEqual(connectedSends, [1, 2, 3]);
+  assert.deepEqual(disconnectedSends, []);
+  assert.equal(botManager.lastUserIndex, 3);
+  cancelAdCampaignMonitor(botManager, { generation });
+});
+
+test('magic messaging requeues a member when its selected bot disconnects before dispatch', async () => {
+  const botManager = manager();
+  botManager.config.baseConfig.botType = 'magic';
+  botManager.config.baseConfig.channelMessagingTimer = 30;
+  botManager.config.baseConfig.singleMessageMillisecInterval = 1;
+  botManager.config.baseConfig.accountsMillisecInterval = 10;
+  botManager.messages.add('advertisement');
+  botManager.messageCount = 1;
+  const sends = [];
+  const secondBot = reconnectableAdBot(async userId => { sends.push({ bot: 2, userId }); });
+  const firstBot = reconnectableAdBot(async userId => {
+    sends.push({ bot: 1, userId });
+    if (userId === 1) {
+      secondBot.connected = false;
+      secondBot.emit('disconnected');
+    }
+  });
+  botManager.adBots = [firstBot, secondBot];
+  const generation = startAdCampaignMonitor(botManager);
+
+  await queueEligibleActivities(botManager, ['1', '2']);
+  await waitUntil(() => sends.length === 2);
+
+  assert.deepEqual(sends, [{ bot: 1, userId: 1 }, { bot: 1, userId: 2 }]);
+  assert.equal(botManager.channelsAdsSent, 2);
+  assert.equal(botManager.channelUsersToMessageQueue.size, 0);
+  cancelAdCampaignMonitor(botManager, { generation });
+});
+
+test('five-minute ad outage rolls back only ad accounts and preserves campaign progress', async () => {
+  const botManager = manager();
+  botManager.config.baseConfig.orderFrom = 1;
+  botManager.config.baseConfig.autoRun = true;
+  botManager.config.adBotConfig = [{ token: 'WE-ad', proxy: { host: 'proxy' } }];
+  botManager._adCampaignOutageTimeoutMs = 25;
+  botManager.lastUserIndex = 12000;
+  botManager.messagesDeliverdeTo.add('42');
+  botManager.users.add('42');
+  botManager.excludedUsers.add('99');
+  botManager.messages.add('saved advertisement');
+  botManager.messageCount = 1;
+  const roomBot = { connected: true };
+  const classifier = { connected: true };
+  botManager.roomBots = [roomBot];
+  botManager.classificationBots = [classifier];
+  const reports = [];
+  botManager.mainBot = {
+    connected: true,
+    isBusy: false,
+    messaging: { sendPrivateMessage: async (_id, message) => { reports.push(message); } }
+  };
+  const events = [];
+  botManager.socket = { connected: true, emit: (event, payload) => events.push({ event, payload }) };
+  const adBot = reconnectableAdBot(async () => {});
+  botManager.adBots = [adBot];
+  startAdCampaignMonitor(botManager);
+
+  adBot.connected = false;
+  adBot.emit('disconnected');
+  await waitUntil(() => botManager.adBots.length === 0);
+
+  assert.equal(adBot.disconnected, true);
+  assert.equal(botManager.lastUserIndex, 12000);
+  assert.equal(botManager.messagesDeliverdeTo.has('42'), true);
+  assert.equal(botManager.users.has('42'), true);
+  assert.equal(botManager.excludedUsers.has('99'), true);
+  assert.deepEqual(botManager.getMessages(), ['saved advertisement']);
+  assert.equal(botManager.messageCount, 1);
+  assert.deepEqual(botManager.roomBots, [roomBot]);
+  assert.deepEqual(botManager.classificationBots, [classifier]);
+  assert.equal(botManager.config.adBotConfig[0].token, '');
+  assert.equal(botManager.config.baseConfig.autoRun, false);
+  assert.equal(botManager.getCurrentStep(), 3);
+  assert.ok(botManager.adConnectionCooldownUntil > Date.now());
+  assert.ok(events.some(item => item.event === 'ad:accounts:reset' && item.payload.activeBotsCount === 0));
+  assert.match(reports[0], /12000/u);
+  clearAdConnectionCooldown(botManager);
+});
+
+test('a successful resume resets the continuous all-offline outage window', async () => {
+  const botManager = manager();
+  botManager._adCampaignOutageTimeoutMs = 35;
+  const adBot = reconnectableAdBot(async () => {});
+  botManager.adBots = [adBot];
+  const generation = startAdCampaignMonitor(botManager);
+
+  adBot.connected = false;
+  adBot.emit('disconnected');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  adBot.connected = true;
+  adBot.emit('resume');
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  assert.equal(botManager.adBots.length, 1);
+  assert.equal(botManager._adCampaignOfflineSince, 0);
+  cancelAdCampaignMonitor(botManager, { generation });
 });
 
 test('low-room campaigns scale their classification-only worker pool', () => {

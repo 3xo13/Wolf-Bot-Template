@@ -46,6 +46,16 @@ async function sendPatchMessages (botManager, patch) {
         break;
       }
       const { user: { userId }, bot } = patch[index];
+      if (!bot?.bot?.connected) {
+        // The member was reserved while the bot was connected, but the bot
+        // became unavailable before its turn in this patch. Undo only that
+        // reservation so another connected bot can pick the member up.
+        botManager.updateChannelUserTimer(userId, 0);
+        botManager.updateChannelUser(userId, Date.now());
+        bot?.bot?.setIsWorking(false);
+        if (bot) { botManager.updateAdBotQueue(bot.id, { sending: false, lastUse: Date.now() }); }
+        continue;
+      }
       if (!botManager.getChannelUsers().length) {
         index = patch.length + 1;
         return;
@@ -78,7 +88,7 @@ async function sendPatchMessages (botManager, patch) {
         // Each bot sends three messages to each user in the patch
         if (bot && messages.length > 0) {
           for (let m = 0; m < messages.slice(0, 3).length; m++) {
-            if (botManager.isReseting) {
+            if (botManager.isReseting || !bot.bot.connected) {
               break;
             }
             const message = messages[m];

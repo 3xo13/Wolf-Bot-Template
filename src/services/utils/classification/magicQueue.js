@@ -1,6 +1,10 @@
 import { sendPatchMessages } from '../adBot/magic/sendPatchMessages.js';
 import { updateEvents } from '../constants/updateEvents.js';
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
+import {
+  getConnectedAdBots,
+  waitForConnectedAdBot
+} from '../adBot/campaignAvailability.js';
 
 async function rotateOnce (botManager) {
   const channelUsers = botManager.getChannelUsersToMessageQueue();
@@ -12,7 +16,8 @@ async function rotateOnce (botManager) {
     });
   }
   const availableBots = botManager.adBotsQueue.filter(entry => {
-    const available = !entry.sending && Date.now() >= entry.lastUse && !entry.bot.isWorking && !entry.bot.isBusy;
+    const available = entry.bot.connected && !entry.sending && Date.now() >= entry.lastUse &&
+      !entry.bot.isWorking && !entry.bot.isBusy;
     if (botManager.isAdBotsTimerLessThanOneMinute() && available) {
       entry.bot.setIsBusy(true);
       return false;
@@ -58,7 +63,13 @@ export function scheduleMagicRotation (botManager) {
   const task = (async () => {
     while (!botManager.isReseting && botManager.channelUsersToMessageQueue.size) {
       const sent = await rotateOnce(botManager);
-      if (!sent) { break; }
+      if (!sent) {
+        if (botManager._adCampaignActive && !getConnectedAdBots(botManager).length) {
+          if (!await waitForConnectedAdBot(botManager, botManager._campaignGeneration)) { break; }
+          continue;
+        }
+        break;
+      }
     }
   })();
   const trackedTask = task.catch(error => {

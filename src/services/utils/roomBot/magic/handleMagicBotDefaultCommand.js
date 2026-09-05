@@ -1,4 +1,3 @@
-import { magicBotSteps } from '../../constants/magicBotSteps.js';
 import { updateEvents } from '../../constants/updateEvents.js';
 import { userMessages } from '../../constants/userMessages.js';
 import { sendPrivateMessage } from '../../messaging/sendPrivateMessage.js';
@@ -14,6 +13,10 @@ import {
   startRoomConnectionCooldown
 } from '../roomConnectionCooldown.js';
 import { assertConnectionBatchAvailable, connectBotBatch, CONNECTION_BATCH_BUSY } from '../../connections/connectBotBatch.js';
+import {
+  buildNextRoomAccountMessage,
+  buildRoomAccountsCompleteMessage
+} from './roomAccountMessages.js';
 
 export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
   try {
@@ -99,13 +102,16 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
     if (botManager.getRoomBots().length === parseInt(botManager.config.baseConfig.instanceLimit)) {
       await sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
-        `${magicBotSteps.room.description}\n${magicBotSteps.room.nextStepMessage}`,
+        buildRoomAccountsCompleteMessage(
+          botManager.getRoomBots().length,
+          botManager.getChannels().length
+        ),
         mainBot
       );
     } else {
       await sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
-        userMessages.sendNextRoomABotToken,
+        buildNextRoomAccountMessage(botManager.getRoomBots().length, channelsIds.length),
         mainBot
       );
     }

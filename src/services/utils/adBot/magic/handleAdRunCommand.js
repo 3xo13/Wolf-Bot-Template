@@ -6,6 +6,8 @@ import setStepState from '../../steps/setStepState.js';
 import { checkBotStep } from '../../steps/checkBotStep.js';
 import handleBotStepReplay from '../../steps/handleBotStepReplay.js';
 import { ensureClassificationBots, startClassificationWorkers } from '../../classification/classificationPool.js';
+import { scheduleMagicRotation } from '../../classification/magicQueue.js';
+import { startAdCampaignMonitor } from '../campaignAvailability.js';
 
 export const handleAdRunCommand = async (botManager) => {
   try {
@@ -16,7 +18,7 @@ export const handleAdRunCommand = async (botManager) => {
       await handleBotStepReplay(botManager);
       return;
     }
-    if (!botManager.getAdBots().length) {
+    if (!botManager.getAdBots().some(bot => bot.connected)) {
       throw new Error('لا يوجد بوتات إعلانات متصلة');
     }
     if (!botManager.getMessages().length) {
@@ -30,9 +32,11 @@ export const handleAdRunCommand = async (botManager) => {
       startClassificationWorkers(botManager, { persistent: true });
     }
     setStepState(botManager, 'messaging');
+    startAdCampaignMonitor(botManager);
     await sendUpdateEvent(botManager, updateEvents.ad.start, { isOn: true });
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, `${magicBotSteps.messaging.description}
     ${magicBotSteps.messaging.nextStepMessage}`, mainBot, mainBot);
+    scheduleMagicRotation(botManager);
   } catch (error) {
     console.log('🚀 ~ handleAdRunCommand ~ error:', error);
     throw error;

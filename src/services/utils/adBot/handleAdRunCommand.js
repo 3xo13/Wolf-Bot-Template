@@ -14,6 +14,7 @@ import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 import { sendPatchMessages } from './sendPatchMessages.js';
 import { startAuthenticatedConnectionCooldowns } from '../roomBot/roomConnectionCooldown.js';
 import { userMessages } from '../constants/userMessages.js';
+import { cancelAdCampaignMonitor, startAdCampaignMonitor } from './campaignAvailability.js';
 
 /**
  * Handles the command to run advertisement bots and send ad messages to users.
@@ -45,7 +46,7 @@ export const handleAdRunCommand = async (botManager) => {
       throw new Error('لا يوجد مستخدمين في القائمة');
     }
     // Validate that there are ad bots connected
-    if (!botManager.getAdBots().length) {
+    if (!botManager.getAdBots().some(bot => bot.connected)) {
       throw new Error('لا يوجد بوتات إعلانات متصلة');
     }
     // Validate that there are messages to send
@@ -62,10 +63,12 @@ export const handleAdRunCommand = async (botManager) => {
 
     // Send advertisement messages in batches using ad bots
     const generation = botManager._classificationGeneration;
-    await sendPatchMessages(botManager);
-    if (!mainBot || botManager.isClassificationCancelled(generation)) {
+    const campaignGeneration = startAdCampaignMonitor(botManager);
+    const outcome = await sendPatchMessages(botManager, campaignGeneration);
+    if (outcome !== 'completed' || !mainBot || botManager.isClassificationCancelled(generation)) {
       return;
     }
+    cancelAdCampaignMonitor(botManager, { generation: campaignGeneration });
     // Update workflow step to indicate ads have been sent
     setStepState(botManager, 'main');
     // Notify client about completion of ad sending
