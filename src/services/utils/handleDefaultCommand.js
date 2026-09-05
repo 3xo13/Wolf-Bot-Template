@@ -10,6 +10,8 @@ import handleBotStepReplay from './steps/handleBotStepReplay.js';
 import setStepState from './steps/setStepState.js';
 // Function to send an update event to the client
 import { sendUpdateEvent } from './updates/sendUpdateEvent.js';
+import { rollbackAdAccountSetup } from './adBot/adAccountConnection.js';
+import { userMessages } from './constants/userMessages.js';
 
 /**
  * Handles default commands sent to the bot when no specific command matches.
@@ -46,8 +48,8 @@ export const handleDefaultCommand = async (botManager, command) => {
 
       if (botType === 'ad') {
         if (!adBots.length || !adBots.every(bot => bot.connected)) {
-          await botManager.clearAdBots();
-          throw new Error('لا يوجد بوتات إعلانات متصلة');
+          await rollbackAdAccountSetup(botManager, { notify: false });
+          throw new Error(`لا يوجد بوتات إعلانات متصلة\n${userMessages.adConnectionCooldownStarted}`);
         }
       }
 

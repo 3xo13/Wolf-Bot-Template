@@ -14,11 +14,13 @@ import {
   assertRoomConnectionCooldownComplete,
   startRoomConnectionCooldown
 } from '../roomConnectionCooldown.js';
+import { assertConnectionBatchAvailable, connectBotBatch, CONNECTION_BATCH_BUSY } from '../../connections/connectBotBatch.js';
 
 export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
   try {
     const mainBot = botManager.getMainBot();
     assertRoomConnectionCooldownComplete(botManager);
+    assertConnectionBatchAvailable(botManager, 'room');
     const futureRoomBotCount = botManager.getRoomBots().length + 1;
     assertRoomBotPoolCapacity(futureRoomBotCount);
     await reserveClassificationCapacityForRoomBots(botManager, futureRoomBotCount);
@@ -26,17 +28,28 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
     // Connect the room bot
     let newRoomBot;
     try {
-      newRoomBot = await botManager.connect('room');
+      [newRoomBot] = await connectBotBatch(botManager, { botType: 'room', count: 1 });
     } catch (error) {
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
       await ensureClassificationBots(botManager);
+      if (error.code === CONNECTION_BATCH_BUSY) { throw error; }
       startRoomConnectionCooldown(botManager);
       const connectionError = new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`);
       connectionError.cause = error;
       throw connectionError;
     }
     // Retrieve the list of channels for the room bot
-    const channels = await getChannelList(newRoomBot);
+    let channels;
+    try {
+      channels = await getChannelList(newRoomBot);
+    } catch (error) {
+      botManager.removeBot('room', newRoomBot);
+      await newRoomBot.disconnect();
+      botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      await ensureClassificationBots(botManager);
+      startRoomConnectionCooldown(botManager);
+      throw new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`, { cause: error });
+    }
     // Extract channel IDs from the channel list (channels is already an array from WOLF API)
     const channelsIds = channels.map(channel => channel.id);
     try {
@@ -46,12 +59,17 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
       await newRoomBot.disconnect();
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
       await ensureClassificationBots(botManager);
-      throw error;
+      startRoomConnectionCooldown(botManager);
+      throw new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`, { cause: error });
     }
 
     if (channelsIds.length === 0) {
-      await botManager.clearRoomBots();
-      throw new Error('لا يوجد رومات في هذا الحساب');
+      botManager.removeBot('room', newRoomBot);
+      await newRoomBot.disconnect();
+      botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      await ensureClassificationBots(botManager);
+      startRoomConnectionCooldown(botManager);
+      throw new Error(`لا يوجد رومات في هذا الحساب\n${userMessages.roomConnectionCooldownStarted}`);
     }
     // Update botManager with the channel IDs
     botManager.setChannels([

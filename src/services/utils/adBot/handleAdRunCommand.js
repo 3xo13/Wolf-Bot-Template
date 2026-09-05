@@ -12,6 +12,8 @@ import setStepState from '../steps/setStepState.js';
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 // Function to send advertisement messages in batches
 import { sendPatchMessages } from './sendPatchMessages.js';
+import { startAuthenticatedConnectionCooldowns } from '../roomBot/roomConnectionCooldown.js';
+import { userMessages } from '../constants/userMessages.js';
 
 /**
  * Handles the command to run advertisement bots and send ad messages to users.
@@ -22,6 +24,7 @@ import { sendPatchMessages } from './sendPatchMessages.js';
  *Array rest - Additional command arguments (not used in this function).
  */
 export const handleAdRunCommand = async (botManager) => {
+  let teardownStarted = false;
   try {
     // Get the main bot instance
     const mainBot = botManager.getMainBot();
@@ -78,14 +81,24 @@ export const handleAdRunCommand = async (botManager) => {
       ${botManager.getMessagesDeliveredTo().length}`,
         mainBot, mainBot
       );
-      await handleBotStepReplay(botManager);
     }
 
+    teardownStarted = true;
+    botManager.isReseting = true;
+    await botManager.clearState({ keepResetting: true });
+    startAuthenticatedConnectionCooldowns(botManager);
     await sendUpdateEvent(botManager, updateEvents.state.clear, {});
-    await botManager.clearState();
+    await sendPrivateMessage(
+      botManager.config.baseConfig.orderFrom,
+      userMessages.campaignRestartCooldownStarted,
+      mainBot,
+      mainBot
+    );
   } catch (error) {
     // Log and rethrow errors for debugging
     console.log('🚀 ~ handleAdRunCommand ~ error:', error);
     throw error;
+  } finally {
+    if (teardownStarted) { botManager.isReseting = false; }
   }
 };

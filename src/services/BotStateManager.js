@@ -15,7 +15,7 @@ import {
   reportUnknownDecision,
   startSlowUnknownRetry
 } from './utils/classification/unknownUsers.js';
-import { clearRoomConnectionCooldown } from './utils/roomBot/roomConnectionCooldown.js';
+import { clearAuthenticatedConnectionCooldowns } from './utils/roomBot/roomConnectionCooldown.js';
 
 class BotStateManager {
   constructor (config) {
@@ -55,10 +55,16 @@ class BotStateManager {
     this.magicUnknownRetryAt = new Map();
     this._classificationGeneration = 0;
     this._connectionGeneration = 0;
+    this._connectionTypeGenerations = { main: 0, room: 0, ad: 0 };
+    this._connectionBatches = { room: null, ad: null };
     this._roomConnectionCooldownGeneration = 0;
     this.roomConnectionCooldownUntil = 0;
     this.roomConnectionCooldownTimer = null;
     this.roomConnectionCooldownNextCommand = null;
+    this._adConnectionCooldownGeneration = 0;
+    this.adConnectionCooldownUntil = 0;
+    this.adConnectionCooldownTimer = null;
+    this.adConnectionCooldownNextCommand = null;
     this._recipientWaiters = new Set();
     this.messagesDeliverdeTo = new Set(); // Set of user IDs to whom messages have been delivered
     this.lastUserIndex = 0;
@@ -99,6 +105,15 @@ class BotStateManager {
 
   // Create and connect a new bot instance based on type
   async connect (botType, adBotIndex) { return connectFn(this, botType, adBotIndex); }
+
+  invalidateConnectionAttempts (botType) {
+    if (botType && Object.hasOwn(this._connectionTypeGenerations, botType)) {
+      this._connectionTypeGenerations[botType]++;
+      return;
+    }
+    this._connectionGeneration++;
+  }
+
   async handleRetryUnknownUsers () { return handleRetryUnknownUsers(this); }
   async handleIgnoreUnknownUsers () { return handleIgnoreUnknownUsers(this); }
   async handleIgnoreAllUnknownUsers () { return handleIgnoreAllUnknownUsers(this); }
@@ -450,7 +465,7 @@ class BotStateManager {
     // managed bot arrays. A login that completes after this point must dispose
     // itself instead of becoming an untracked connection.
     this._connectionGeneration++;
-    clearRoomConnectionCooldown(this);
+    clearAuthenticatedConnectionCooldowns(this);
     this.isReseting = true;
     this.cancelClassification();
     this.clearClassificationState();

@@ -4,7 +4,6 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { updateEvents } from './utils/constants/updateEvents.js';
 import { sendUpdateEvent } from './utils/updates/sendUpdateEvent.js';
-import { sendPrivateMessage } from './utils/messaging/sendPrivateMessage.js';
 
 /**
  * Extended WOLF class with custom bot management features
@@ -94,6 +93,7 @@ class CustomWOLF extends WOLF {
       const timeoutId = setTimeout(async () => {
         cleanup();
         this.connected = false;
+        this.stopSocketReconnection();
         if (this.botType === 'main') {
           await sendUpdateEvent(this.botManager, updateEvents.bots.main.disconnected, { state: 'disconnected' });
         }
@@ -133,38 +133,8 @@ class CustomWOLF extends WOLF {
         // Handle invalid login (no subscriber ID)
         if (!welcome.subscriber?.id) {
           console.error('❌ Login failed - No subscriber ID:', { botType: this.botType });
-
-          // Notify admin for non-main bots
-          if (this.botType !== 'main' && this.botManager?.getMainBot?.()?.getSocket()) {
-            await sendPrivateMessage(
-              this.botManager.config.baseConfig.orderFrom,
-              'لم يتم تسجيل الحساب, الرجاء ادخال حساب اخر',
-              this.botManager.getMainBot().getSocket()
-            );
-          }
-
-          // Clear bots and send disconnect event based on type
-          switch (this.botType) {
-            case 'room':
-              this.botManager?.clearRoomBots?.();
-              await sendUpdateEvent(this.botManager, updateEvents.bots.room.disconnected, { state: 'disconnected' });
-              break;
-
-            case 'ad':
-              this.botManager?.clearAdBots?.();
-              await sendUpdateEvent(this.botManager, updateEvents.bots.ad.disconnected, { state: 'disconnected' });
-              break;
-
-            case 'main':
-              await sendUpdateEvent(this.botManager, updateEvents.bots.main.disconnected, { state: 'disconnected' });
-              break;
-
-            default:
-              console.error('Unknown bot type:', this.botType);
-              break;
-          }
-
-          this.logout();
+          this.stopSocketReconnection();
+          await handleError(new Error('لم يتم تسجيل الحساب، الرجاء إدخال حساب آخر'));
           return;
         }
 

@@ -17,8 +17,10 @@ async function loginOrDispose (bot, config) {
   }
 }
 
-export function registerConnectedBot (manager, botType, botInstance, generation) {
-  if (manager.isReseting || manager._destroyed || generation !== manager._connectionGeneration) {
+export function registerConnectedBot (manager, botType, botInstance, generation, typeGeneration) {
+  const typeGenerationChanged = typeGeneration !== undefined &&
+    typeGeneration !== manager._connectionTypeGenerations?.[botType];
+  if (manager.isReseting || manager._destroyed || generation !== manager._connectionGeneration || typeGenerationChanged) {
     return false;
   }
   if (botType === 'main') {
@@ -45,8 +47,8 @@ export function registerConnectedBot (manager, botType, botInstance, generation)
   return true;
 }
 
-async function rejectStaleConnection (manager, botType, botInstance, generation) {
-  if (registerConnectedBot(manager, botType, botInstance, generation)) { return; }
+async function rejectStaleConnection (manager, botType, botInstance, generation, typeGeneration) {
+  if (registerConnectedBot(manager, botType, botInstance, generation, typeGeneration)) { return; }
   try { await botInstance.disconnect(); } catch {}
   const error = new Error('Bot connection was cancelled by reset');
   error.code = 'BOT_CONNECTION_CANCELLED';
@@ -58,13 +60,14 @@ export async function connectFn (manager, botType, adBotIndex) {
     throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
   }
   const connectionGeneration = manager._connectionGeneration;
+  const connectionTypeGeneration = manager._connectionTypeGenerations?.[botType] || 0;
   const { mainBotConfig, roomBotConfig, adBotConfig } = manager.config;
   let botInstance;
   switch (botType) {
     case 'main':
       botInstance = new CustomWOLF(manager, 'main');
       await loginOrDispose(botInstance, mainBotConfig);
-      await rejectStaleConnection(manager, botType, botInstance, connectionGeneration);
+      await rejectStaleConnection(manager, botType, botInstance, connectionGeneration, connectionTypeGeneration);
 
       // Setup message routing for ad and magic bot types
       botInstance.setupMessageRouting({
@@ -81,7 +84,7 @@ export async function connectFn (manager, botType, adBotIndex) {
       botInstance = new CustomWOLF(manager, 'room');
       const roomConfig = { ...roomBotConfig, token: manager.roomBotsTokens.at(-1) };
       await loginOrDispose(botInstance, roomConfig);
-      await rejectStaleConnection(manager, botType, botInstance, connectionGeneration);
+      await rejectStaleConnection(manager, botType, botInstance, connectionGeneration, connectionTypeGeneration);
 
       // For magic bots, set up group message and update listeners
       if (manager.getBotType() === 'magic') {
@@ -147,7 +150,7 @@ export async function connectFn (manager, botType, adBotIndex) {
         throw new Error(`Ad bot configuration not found at index ${adBotIndex}`);
       }
       await loginOrDispose(botInstance, { ...adBotConfig[adBotIndex] });
-      await rejectStaleConnection(manager, botType, botInstance, connectionGeneration);
+      await rejectStaleConnection(manager, botType, botInstance, connectionGeneration, connectionTypeGeneration);
       break;
     default:
       throw new Error(`Unknown bot type: ${botType}`);

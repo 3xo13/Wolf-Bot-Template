@@ -6,6 +6,7 @@ import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
 import { updateEvents } from '../constants/updateEvents.js';
 import { updateTimers } from '../../helpers/updateTimers.js';
 import { handleAdRunCommand } from '../adBot/handleAdRunCommand.js';
+import { connectAdAccountBatch } from '../adBot/adAccountConnection.js';
 
 export const handleAdBotAutoRun = async (botManager) => {
   const mainBot = botManager.getMainBot();
@@ -26,7 +27,6 @@ export const handleAdBotAutoRun = async (botManager) => {
   try {
     await handleRoomCommand(roomBotToken, botManager);
     await handlePrepareCommand(botManager);
-    const instanceCount = botManager.config.baseConfig.instanceCount;
     for (let i = 0; i < adBotTokens.length; i++) {
       const tokenConfig = adBotTokens[i];
       if (botManager.isReseting) {
@@ -34,21 +34,7 @@ export const handleAdBotAutoRun = async (botManager) => {
       }
       updateTimers(botManager, 'ad');
       // botManager.startAdBotsReconnectScheduler();
-      // Connect the required number of ad bots
-      try {
-        await Promise.all(
-          Array.from({ length: instanceCount }, () => botManager.connect('ad', i))
-        );
-      } catch (error) {
-        // If any connection fails, disconnect and clear all ad bots
-        await botManager.clearAdBots();
-        await sendPrivateMessage(
-          botManager.config.baseConfig.orderFrom,
-          '❌ فشل في الاتصال بأحد بوتات الإعلانات، يرجى التحقق من التوكن أو تغيير الحساب ',
-          mainBot, mainBot
-        );
-        throw error;
-      }
+      if (!await connectAdAccountBatch(botManager, i)) { return; }
 
       // Notify the user that ad bots are ready and provide next step instructions
       await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: tokenConfig.token, index: i });

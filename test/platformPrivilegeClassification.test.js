@@ -31,10 +31,17 @@ import CustomWOLF from '../src/services/CustomWOLF.js';
 import { handleReset } from '../src/services/utils/handleReset.js';
 import { handleRoomCommand as handleNormalRoomCommand } from '../src/services/utils/roomBot/handleRoomCommand.js';
 import {
+  assertAdConnectionCooldownComplete,
   assertRoomConnectionCooldownComplete,
+  clearAdConnectionCooldown,
   clearRoomConnectionCooldown,
+  startAdConnectionCooldown,
   startRoomConnectionCooldown
 } from '../src/services/utils/roomBot/roomConnectionCooldown.js';
+import { connectBotBatch } from '../src/services/utils/connections/connectBotBatch.js';
+import { rollbackAdAccountSetup } from '../src/services/utils/adBot/adAccountConnection.js';
+import { handleStopCommand } from '../src/services/utils/adBot/handleStopCommand.js';
+import { handleAdAccountCommand } from '../src/services/utils/adBot/handleAdAccountCommand.js';
 
 function manager () {
   return new BotStateManager({
@@ -365,7 +372,9 @@ test('reset remains blocking until its final client notification is sent', async
   assert.equal(botManager.isReseting, false);
   assert.ok(events.some(item => item.event === 'state:reset'));
   assert.ok(botManager.roomConnectionCooldownUntil > Date.now());
+  assert.ok(botManager.adConnectionCooldownUntil > Date.now());
   clearRoomConnectionCooldown(botManager);
+  clearAdConnectionCooldown(botManager);
 });
 
 test('a room connection completed after reset cannot become an orphan', () => {
@@ -495,7 +504,7 @@ test('failed room-pool creation waits for every connection attempt to settle', a
   const result = await connectPreparationRoomBots(botManager, 5);
 
   assert.match(result.error.message, /Connection timeout/);
-  assert.deepEqual(result.bots, connectedBots);
+  assert.deepEqual(result.bots, []);
   assert.equal(call, 5);
 });
 
@@ -755,4 +764,178 @@ test('manual ignore decisions suppress the intended IDs without cancelling the g
   assert.equal(botManager.ignoredUsers.has('1'), true);
   assert.equal(botManager.ignoredUsers.has('2'), true);
   assert.equal(botManager.classificationQueue.length, 0);
+});
+
+test('transactional ad batches wait for and dispose late successes', async () => {
+  const botManager = manager();
+  let call = 0;
+  let disconnected = 0;
+  botManager.connect = async () => {
+    const index = call++;
+    if (index === 0) { throw new Error('websocket error'); }
+    await new Promise(resolve => setTimeout(resolve, 10));
+    const bot = { disconnect: async () => { disconnected++; } };
+    botManager.adBots.push(bot);
+    return bot;
+  };
+
+  await assert.rejects(
+    connectBotBatch(botManager, { botType: 'ad', count: 4, adBotIndex: 0 }),
+    /websocket error/
+  );
+
+  assert.equal(call, 4);
+  assert.equal(disconnected, 3);
+  assert.deepEqual(botManager.adBots, []);
+  assert.equal(botManager._connectionBatches.ad, null);
+});
+
+test('overlapping batches of the same account type are rejected', async () => {
+  const botManager = manager();
+  let releaseConnection;
+  botManager.connect = async () => new Promise(resolve => {
+    releaseConnection = () => resolve({ disconnect: async () => {} });
+  });
+
+  const firstBatch = connectBotBatch(botManager, { botType: 'ad', count: 1, adBotIndex: 0 });
+  await waitUntil(() => typeof releaseConnection === 'function');
+  await assert.rejects(
+    connectBotBatch(botManager, { botType: 'ad', count: 1, adBotIndex: 0 }),
+    /محاولة اتصال جارية/
+  );
+  releaseConnection();
+  await firstBatch;
+});
+
+test('a room channel-list failure disconnects the registered account and starts cooldown', async () => {
+  const botManager = manager();
+  botManager.mainBot = { connected: true };
+  let disconnects = 0;
+  const roomBot = {
+    connected: true,
+    channel: { list: async () => { throw new Error('channel list failed'); } },
+    disconnect: async () => { disconnects++; }
+  };
+  botManager.connect = async () => {
+    botManager.roomBots.push(roomBot);
+    return roomBot;
+  };
+
+  await assert.rejects(
+    handleNormalRoomCommand('WE-room-token', botManager),
+    /channel list failed/
+  );
+
+  assert.equal(disconnects, 1);
+  assert.deepEqual(botManager.roomBots, []);
+  assert.deepEqual(botManager.roomBotsTokens, []);
+  assert.ok(botManager.roomConnectionCooldownUntil > Date.now());
+  clearRoomConnectionCooldown(botManager);
+});
+
+test('ad rollback clears every account and emits an authoritative client reset', async () => {
+  const botManager = manager();
+  botManager.config.baseConfig.orderFrom = 1;
+  botManager.config.baseConfig.autoRun = true;
+  botManager.config.adBotConfig = [
+    { token: 'WE-one', proxy: { host: 'one' } },
+    { token: 'WE-two', proxy: { host: 'two' } }
+  ];
+  botManager.currentStep = 3;
+  let disconnects = 0;
+  botManager.adBots = Array.from({ length: 5 }, () => ({
+    disconnect: async () => { disconnects++; }
+  }));
+  const events = [];
+  botManager.socket = { connected: true, emit: (event, payload) => events.push({ event, payload }) };
+
+  await rollbackAdAccountSetup(botManager, { notify: false });
+
+  assert.equal(disconnects, 5);
+  assert.deepEqual(botManager.adBots, []);
+  assert.ok(botManager.config.adBotConfig.every(config => config.token === ''));
+  assert.equal(botManager.config.baseConfig.autoRun, false);
+  assert.equal(botManager.currentStep, 3);
+  assert.ok(botManager.adConnectionCooldownUntil > Date.now());
+  assert.deepEqual(events.find(item => item.event === 'ad:accounts:reset')?.payload, {
+    activeBotsCount: 0,
+    autoRun: false
+  });
+  clearAdConnectionCooldown(botManager);
+});
+
+test('manual ad connection failure is handled once and returns to account one', async () => {
+  const botManager = manager();
+  botManager.config.baseConfig.orderFrom = 1;
+  botManager.config.baseConfig.instanceCount = 3;
+  botManager.config.adBotConfig = [{ token: '', proxy: { host: 'proxy' } }];
+  botManager.currentStep = 3;
+  botManager.eligibleUsers.add('42');
+  const messages = [];
+  botManager.mainBot = {
+    connected: true,
+    isBusy: false,
+    messaging: { sendPrivateMessage: async (_id, message) => { messages.push(message); } }
+  };
+  botManager.connect = async () => { throw new Error('Connection timeout after 15 seconds'); };
+  botManager.socket = { connected: true, emit: () => {} };
+
+  await handleAdAccountCommand(botManager, 'WE-failing-ad-token');
+
+  assert.equal(messages.length, 1);
+  assert.match(messages[0], /فشل في الاتصال/);
+  assert.equal(messages[0].includes('Connection timeout after 15 seconds'), false);
+  assert.equal(botManager.config.adBotConfig[0].token, '');
+  assert.equal(botManager.currentStep, 3);
+  assert.ok(botManager.adConnectionCooldownUntil > Date.now());
+  clearAdConnectionCooldown(botManager);
+});
+
+test('ad connection cooldown rejects reuse and sends one expiry prompt', async () => {
+  const botManager = manager();
+  botManager.config.baseConfig.orderFrom = 1;
+  const messages = [];
+  botManager.mainBot = {
+    connected: true,
+    isBusy: false,
+    messaging: { sendPrivateMessage: async (_id, message) => { messages.push(message); } }
+  };
+
+  startAdConnectionCooldown(botManager, { duration: 25 });
+  assert.throws(() => assertAdConnectionCooldownComplete(botManager), /الانتظار/);
+  await waitUntil(() => messages.length === 1);
+  assert.doesNotThrow(() => assertAdConnectionCooldownComplete(botManager));
+  assert.match(messages[0], /حساب الإعلان الأول/);
+});
+
+test('stop preserves ad style and creative while clearing runtime state', async () => {
+  const botManager = manager();
+  botManager.config.baseConfig.orderFrom = 1;
+  botManager.currentStep = 7;
+  botManager.messageCount = 3;
+  botManager.messages = new Set(['one', 'two', 'three']);
+  botManager.channelsAdsSent = 99;
+  botManager.messagesDeliverdeTo.add('42');
+  const messages = [];
+  botManager.mainBot = {
+    connected: true,
+    isBusy: false,
+    messaging: { sendPrivateMessage: async (_id, message) => { messages.push(message); } }
+  };
+  const events = [];
+  botManager.socket = { connected: true, emit: (event, payload) => events.push({ event, payload }) };
+
+  await handleStopCommand(botManager);
+
+  assert.equal(botManager.messageCount, 3);
+  assert.deepEqual(botManager.getMessages(), ['one', 'two', 'three']);
+  assert.equal(botManager.channelsAdsSent, 0);
+  assert.equal(botManager.messagesDeliverdeTo.size, 0);
+  assert.equal(botManager.currentStep, 1);
+  assert.ok(botManager.roomConnectionCooldownUntil > Date.now());
+  assert.ok(botManager.adConnectionCooldownUntil > Date.now());
+  assert.ok(events.some(item => item.event === 'state:clear'));
+  assert.match(messages[0], /تم الاحتفاظ بنمط الإعلان/);
+  clearRoomConnectionCooldown(botManager);
+  clearAdConnectionCooldown(botManager);
 });

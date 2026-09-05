@@ -9,6 +9,7 @@ import { checkBotStep } from '../steps/checkBotStep.js';
 import setStepState from '../steps/setStepState.js';
 
 import { sendUpdateEvent } from '../updates/sendUpdateEvent.js';
+import { rollbackAdAccountSetup } from './adAccountConnection.js';
 
 export const handleAdMessageCommand = async (botManager, command) => {
   const [commandName, data, ...rest] = command.body.split('\n');
@@ -27,8 +28,8 @@ export const handleAdMessageCommand = async (botManager, command) => {
     }
     // Check if there are ad bots connected
     if (!adBots.length || !adBots.every(bot => bot.connected)) {
-      await botManager.clearAdBots();
-      throw new Error('لا يوجد بوتات إعلانات متصلة');
+      await rollbackAdAccountSetup(botManager, { notify: false });
+      throw new Error(`لا يوجد بوتات إعلانات متصلة\n${userMessages.adConnectionCooldownStarted}`);
     }
     // Validate that message content is provided
     if (!data) {

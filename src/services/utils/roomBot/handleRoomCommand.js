@@ -15,6 +15,7 @@ import {
   assertRoomConnectionCooldownComplete,
   startRoomConnectionCooldown
 } from './roomConnectionCooldown.js';
+import { assertConnectionBatchAvailable, connectBotBatch, CONNECTION_BATCH_BUSY } from '../connections/connectBotBatch.js';
 
 /**
  * Handles the room bot setup command.
@@ -37,6 +38,7 @@ export const handleRoomCommand = async (token, botManager) => {
       return;
     }
     assertRoomConnectionCooldownComplete(botManager);
+    assertConnectionBatchAvailable(botManager, 'room');
     if (checkBotStep(botManager, 'room')) {
       await handleBotStepReplay(botManager);
       return;
@@ -56,19 +58,29 @@ export const handleRoomCommand = async (token, botManager) => {
     // Connect the room bot
     let newRoomBot;
     try {
-      newRoomBot = await botManager.connect('room');
+      [newRoomBot] = await connectBotBatch(botManager, { botType: 'room', count: 1 });
     } catch (error) {
       // The token is appended before connect() so it can be selected by the
       // connection factory. A rejected login must roll that provisional entry
       // back or later room-account state no longer matches the managed bots.
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      if (error.code === CONNECTION_BATCH_BUSY) { throw error; }
       startRoomConnectionCooldown(botManager);
       const connectionError = new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`);
       connectionError.cause = error;
       throw connectionError;
     }
     // Retrieve the list of channels for the room bot
-    const channels = await getChannelList(newRoomBot);
+    let channels;
+    try {
+      channels = await getChannelList(newRoomBot);
+    } catch (error) {
+      botManager.removeBot('room', newRoomBot);
+      await newRoomBot.disconnect();
+      botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
+      startRoomConnectionCooldown(botManager);
+      throw new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`, { cause: error });
+    }
     // Extract channel IDs from the channel list (channels is already an array from WOLF API)
     const channelsIds = channels.map(channel => channel.id);
     try {
@@ -77,11 +89,14 @@ export const handleRoomCommand = async (token, botManager) => {
       botManager.removeBot('room', newRoomBot);
       await newRoomBot.disconnect();
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
-      throw error;
+      startRoomConnectionCooldown(botManager);
+      throw new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`, { cause: error });
     }
     if (channelsIds.length === 0) {
       await botManager.clearRoomBots();
-      throw new Error('لا يوجد رومات في هذا الحساب');
+      botManager.roomBotsTokens = [];
+      startRoomConnectionCooldown(botManager);
+      throw new Error(`لا يوجد رومات في هذا الحساب\n${userMessages.roomConnectionCooldownStarted}`);
     }
     // Update botManager with the channel IDs
     botManager.setChannels(channelsIds);
@@ -90,10 +105,13 @@ export const handleRoomCommand = async (token, botManager) => {
     if (!botManager.isRoomBotLimitValid()) {
       await botManager.clearRoomBots();
       await botManager.clearChannels();
+      botManager.roomBotsTokens = [];
+      startRoomConnectionCooldown(botManager);
       throw new Error(
         `لديك عدد غرف في هذا الحساب اعلى من الحد المسموح
                     عدد الغرف: ${channelsIds.length}
-                    الحد المسموح: ${botManager.config.baseConfig.instanceLimit}`
+                    الحد المسموح: ${botManager.config.baseConfig.instanceLimit}
+${userMessages.roomConnectionCooldownStarted}`
       );
     }
     setStepState(botManager, 'room');

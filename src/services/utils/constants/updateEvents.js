@@ -14,7 +14,8 @@ export const updateEvents = {
     start: 'ad:start',
     delete: 'ad:delete',
     done: 'ad:done',
-    update: 'ad:update'
+    update: 'ad:update',
+    accountsReset: 'ad:accounts:reset'
   },
   message: {
     setup: 'message:setup',

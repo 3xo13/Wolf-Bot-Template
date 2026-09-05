@@ -17,6 +17,7 @@ import {
   assertRoomConnectionCooldownComplete,
   startRoomConnectionCooldown
 } from './roomConnectionCooldown.js';
+import { connectBotBatch } from '../connections/connectBotBatch.js';
 
 async function fetchOnly (botManager, roomBot, channelId, generation) {
   try {
@@ -38,18 +39,14 @@ export async function releasePreparationRoomBots (botManager, producerBots, gene
 }
 
 export async function connectPreparationRoomBots (botManager, count) {
-  // Preserve the original parallel connection behavior. Waiting with
-  // allSettled keeps partial failures safe without stretching the proxy load
-  // into a long stream of new WebSocket handshakes.
-  const results = await Promise.allSettled(
-    Array.from({ length: count }, () => botManager.connect('room'))
-  );
-  return {
-    bots: results
-      .filter(result => result.status === 'fulfilled')
-      .map(result => result.value),
-    error: results.find(result => result.status === 'rejected')?.reason || null
-  };
+  try {
+    return {
+      bots: await connectBotBatch(botManager, { botType: 'room', count }),
+      error: null
+    };
+  } catch (error) {
+    return { bots: [], error };
+  }
 }
 
 export function getLowRoomClassificationWorkerCount (roomCount, userCount) {

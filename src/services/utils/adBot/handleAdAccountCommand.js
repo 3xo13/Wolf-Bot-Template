@@ -10,6 +10,9 @@ import { checkBotStep } from '../steps/checkBotStep.js';
 import { updateTimers } from '../../helpers/updateTimers.js';
 import handleBotStepReplay from '../steps/handleBotStepReplay.js';
 import { userMessages } from '../constants/userMessages.js';
+import { assertAdConnectionCooldownComplete } from '../roomBot/roomConnectionCooldown.js';
+import { connectAdAccountBatch } from './adAccountConnection.js';
+import { assertConnectionBatchAvailable } from '../connections/connectBotBatch.js';
 
 export const handleAdAccountCommand = async (botManager, data) => {
   botManager.setIsBusy(true);
@@ -18,9 +21,11 @@ export const handleAdAccountCommand = async (botManager, data) => {
     const mainBot = botManager.getMainBot();
     const botType = botManager.getBotType();
     const step = botManager.getBotType() === 'ad' ? 'members' : 'room';
+    assertConnectionBatchAvailable(botManager, 'ad');
     const currentAdBotIndex = botManager.config.adBotConfig.findIndex(adBot => !adBot.token);
     const existingCount = botManager.getMessageCount();
     const shuldSkipSteps = existingCount === 1 || existingCount === 3;
+    assertAdConnectionCooldownComplete(botManager);
     if (!checkBotStep(botManager, step)) {
       await handleBotStepReplay(botManager);
       return;
@@ -35,26 +40,11 @@ export const handleAdAccountCommand = async (botManager, data) => {
     }
     // Set the ad bot token for authentication
     botManager.setAdBotToken(data, currentAdBotIndex);
-    // Get the number of ad bot instances to create
-    const instanceCount = botManager.config.baseConfig.instanceCount;
-
     updateTimers(botManager, 'ad');
     // botManager.startAdBotsReconnectScheduler();
-    // Connect the required number of ad bots
-    try {
-      await Promise.all(
-        Array.from({ length: instanceCount }, () => botManager.connect('ad', currentAdBotIndex))
-      );
-    } catch (error) {
-      // If any connection fails, disconnect and clear all ad bots
-      await botManager.clearAdBots();
-      await sendPrivateMessage(
-        botManager.config.baseConfig.orderFrom,
-        '❌ فشل في الاتصال بأحد بوتات الإعلانات، يرجى التحقق من التوكن أو تغيير الحساب ',
-        mainBot, mainBot
-      );
-      throw error;
-    }
+    // Commit this account only if every requested connection succeeds. A
+    // partial failure rolls every advertising account back to account one.
+    if (!await connectAdAccountBatch(botManager, currentAdBotIndex)) { return; }
 
     // Notify the user that ad bots are ready and provide next step instructions
     await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: data, index: currentAdBotIndex });

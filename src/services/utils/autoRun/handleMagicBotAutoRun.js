@@ -10,6 +10,8 @@ import {
   assertRoomBotPoolCapacity,
   ensureClassificationBots
 } from '../classification/classificationPool.js';
+import { connectAdAccountBatch } from '../adBot/adAccountConnection.js';
+import { connectBotBatch } from '../connections/connectBotBatch.js';
 
 export const handleMagicBotAutoRun = async (botManager) => {
   const mainBot = botManager.getMainBot();
@@ -18,7 +20,6 @@ export const handleMagicBotAutoRun = async (botManager) => {
   roomBotTokens.forEach(token => {
     botManager.addNewRoomBotToken(token);
   });
-  const adBotToken = botManager.getAdBotsToken();
   if (!botManager.config.baseConfig.autoRun) {
     throw new Error('Auto run is disabled');
   }
@@ -33,7 +34,10 @@ export const handleMagicBotAutoRun = async (botManager) => {
   try {
     assertRoomBotPoolCapacity(roomBotTokens.length);
     setStepState(botManager, 'room');
-    const results = await Promise.all(roomBotTokens.map(token => botManager.connect('room')));
+    const results = await connectBotBatch(botManager, {
+      botType: 'room',
+      count: roomBotTokens.length
+    });
     if (!results.every(promise => promise)) {
       throw new Error('Failed to connect all room bots');
     }
@@ -77,7 +81,6 @@ export const handleMagicBotAutoRun = async (botManager) => {
       })
     );
     await sendUpdateEvent(botManager, updateEvents.channels.setup, { channels: channelIds });
-    const instanceCount = botManager.config.baseConfig.instanceCount;
     for (let i = 0; i < adBotTokens.length; i++) {
       if (botManager.isReseting) {
         throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
@@ -86,21 +89,7 @@ export const handleMagicBotAutoRun = async (botManager) => {
 
       updateTimers(botManager, 'ad');
       // botManager.startAdBotsReconnectScheduler();
-      // Connect the required number of ad bots
-      try {
-        await Promise.all(
-          Array.from({ length: instanceCount }, () => botManager.connect('ad', i))
-        );
-      } catch (error) {
-        // If any connection fails, disconnect and clear all ad bots
-        await botManager.clearAdBots();
-        await sendPrivateMessage(
-          botManager.config.baseConfig.orderFrom,
-          '❌ فشل في الاتصال بأحد بوتات الإعلانات، يرجى التحقق من التوكن أو تغيير الحساب ',
-          mainBot, mainBot
-        );
-        throw error;
-      }
+      if (!await connectAdAccountBatch(botManager, i)) { return; }
 
       // Notify the user that ad bots are ready and provide next step instructions
       await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: tokenConfig.token, index: i });
