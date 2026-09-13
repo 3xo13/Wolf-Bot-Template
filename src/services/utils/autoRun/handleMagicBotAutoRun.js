@@ -34,9 +34,13 @@ export const handleMagicBotAutoRun = async (botManager) => {
   try {
     assertRoomBotPoolCapacity(roomBotTokens.length);
     setStepState(botManager, 'room');
+    const roomDescriptors = roomBotTokens.map((token, index) =>
+      botManager.getConnectionDescriptor('room', index, token)
+    );
     const results = await connectBotBatch(botManager, {
       botType: 'room',
-      count: roomBotTokens.length
+      count: roomBotTokens.length,
+      descriptors: roomDescriptors
     });
     if (!results.every(promise => promise)) {
       throw new Error('Failed to connect all room bots');
@@ -85,14 +89,12 @@ export const handleMagicBotAutoRun = async (botManager) => {
       if (botManager.isReseting) {
         throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
       }
-      const tokenConfig = adBotTokens[i];
-
       updateTimers(botManager, 'ad');
       // botManager.startAdBotsReconnectScheduler();
       if (!await connectAdAccountBatch(botManager, i)) { return; }
 
       // Notify the user that ad bots are ready and provide next step instructions
-      await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: tokenConfig.token, index: i });
+      await sendUpdateEvent(botManager, updateEvents.ad.setup, { index: i });
       await sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
         `حساب الإعلان رقم ( ${i + 1} ) متصل بنجاح`,
@@ -109,7 +111,7 @@ export const handleMagicBotAutoRun = async (botManager) => {
     setStepState(botManager, 'message');
     await handleAdRunCommand(botManager);
   } catch (error) {
-    console.log('🚀 ~ handleMagicBotAutoRun ~ error:', error);
+    console.log('🚀 ~ handleMagicBotAutoRun ~ error:', error?.message || 'unknown error');
     sendPrivateMessage(botManager.config.baseConfig.orderFrom, error.message, mainBot).catch(() => {});
   }
 };

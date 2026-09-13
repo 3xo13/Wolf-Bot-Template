@@ -27,6 +27,7 @@ import { cancelAdCampaignMonitor, startAdCampaignMonitor } from './campaignAvail
 export const handleAdRunCommand = async (botManager) => {
   let teardownStarted = false;
   try {
+    if (!await botManager.waitForAppCheckResume()) { return; }
     // Get the main bot instance
     const mainBot = botManager.getMainBot();
     const messagesLength = botManager.getMessages().length;
@@ -91,6 +92,7 @@ export const handleAdRunCommand = async (botManager) => {
     await botManager.clearState({ keepResetting: true });
     startAuthenticatedConnectionCooldowns(botManager);
     await sendUpdateEvent(botManager, updateEvents.state.clear, {});
+    botManager.appCheckRegistry.emitSnapshot();
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
       userMessages.campaignRestartCooldownStarted,

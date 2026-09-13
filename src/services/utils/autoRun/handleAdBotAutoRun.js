@@ -11,10 +11,7 @@ import { connectAdAccountBatch } from '../adBot/adAccountConnection.js';
 export const handleAdBotAutoRun = async (botManager) => {
   const mainBot = botManager.getMainBot();
   const roomBotTokens = botManager.config.roomBotConfig.token;
-  roomBotTokens.forEach(token => {
-    botManager.addNewRoomBotToken(token);
-  });
-  const roomBotToken = botManager.getRoomBotsTokens()[0];
+  const roomBotToken = roomBotTokens[0];
   const adBotTokens = botManager.config.adBotConfig;
   if (!botManager.config.baseConfig.autoRun) { throw new Error('Auto run is disabled'); }
   if (!roomBotToken) { throw new Error('No room bots tokens available'); }
@@ -28,7 +25,6 @@ export const handleAdBotAutoRun = async (botManager) => {
     await handleRoomCommand(roomBotToken, botManager);
     await handlePrepareCommand(botManager);
     for (let i = 0; i < adBotTokens.length; i++) {
-      const tokenConfig = adBotTokens[i];
       if (botManager.isReseting) {
         throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
       }
@@ -37,7 +33,7 @@ export const handleAdBotAutoRun = async (botManager) => {
       if (!await connectAdAccountBatch(botManager, i)) { return; }
 
       // Notify the user that ad bots are ready and provide next step instructions
-      await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: tokenConfig.token, index: i });
+      await sendUpdateEvent(botManager, updateEvents.ad.setup, { index: i });
       await sendPrivateMessage(
         botManager.config.baseConfig.orderFrom,
         `حساب الإعلان رقم ( ${i + 1} ) متصل بنجاح`,
@@ -54,7 +50,7 @@ export const handleAdBotAutoRun = async (botManager) => {
     setStepState(botManager, 'message');
     await handleAdRunCommand(botManager);
   } catch (error) {
-    console.log('🚀 ~ handleAdBotAutoRun ~ error:', error);
+    console.log('🚀 ~ handleAdBotAutoRun ~ error:', error?.message || 'unknown error');
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, error.message, mainBot);
   }
 };

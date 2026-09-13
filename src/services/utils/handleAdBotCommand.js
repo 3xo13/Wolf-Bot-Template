@@ -18,6 +18,14 @@ export const handleAdBotCommand = async (command, args) => {
   const { clientSocket, botManager } = args;
   const mainBot = botManager.getMainBot();
   const [commandName, data, ...rest] = command.body.split('\n');
+  if (commandName === 'إعادة محاولة التحقق') {
+    await botManager.appCheckRegistry.retryFailed();
+    return;
+  }
+  if (commandName === 'إيقاف مؤقت وإعادة محاولة التحقق') {
+    await botManager.appCheckRegistry.retryFailed({ acknowledgeMain: true });
+    return;
+  }
   const classificationCommands = [
     'اعادة فحص الاعضاء', 'اعادة فحص المستخدمين',
     'تجاهل الاعضاء', 'تجاهل المستخدمين',
@@ -106,7 +114,7 @@ export const handleAdBotCommand = async (command, args) => {
         break;
     }
   } catch (error) {
-    console.log('🚀 ~ handleCommand ~ error:', error);
+    console.log('🚀 ~ handleCommand ~ error:', error?.message || 'unknown error');
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, error.message, mainBot, mainBot);
   }
 };

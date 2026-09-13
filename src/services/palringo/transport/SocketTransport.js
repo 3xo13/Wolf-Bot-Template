@@ -33,8 +33,6 @@ export default class SocketTransport extends EventEmitter {
         token: this.config.token,
         device: this.config.device,
         isAppCheckEnabled: 'true',
-        state: this.config.onlineState,
-        version: this.config.version,
         ...(this.config.appCheckToken ? { appCheckToken: this.config.appCheckToken } : {})
       },
       extraHeaders: this.config.appCheckToken
@@ -62,12 +60,19 @@ export default class SocketTransport extends EventEmitter {
       this.rejectPending(new PalringoConnectionError('Connection interrupted', { reason }));
       this.emit('disconnect', reason);
       if (!this.closed && reason === 'io server disconnect') {
-        this.socket?.connect();
+        if (this.isAppCheckUsable()) { this.socket?.connect(); } else { this.emit('appCheckUnavailable'); }
       }
     });
     this.socket.on('connect_error', error => this.emit('connectError', error));
     this.socket.onAny((event, data) => this.emit('packet', event, data));
-    this.socket.io?.on?.('reconnect_attempt', attempt => this.emit('reconnectAttempt', attempt));
+    this.socket.io?.on?.('reconnect_attempt', attempt => {
+      if (!this.isAppCheckUsable()) {
+        this.disableReconnection();
+        this.emit('appCheckUnavailable');
+        return;
+      }
+      this.emit('reconnectAttempt', attempt);
+    });
     this.socket.io?.on?.('reconnect_failed', error => this.emit('reconnectFailed', error));
   }
 
@@ -82,6 +87,9 @@ export default class SocketTransport extends EventEmitter {
     if (this.connected && this.socket?.connected) { return; }
     if (!this.config.token) {
       throw new PalringoConnectionError('An authenticated connection requires a token');
+    }
+    if (!this.isAppCheckUsable()) {
+      throw new PalringoConnectionError('A valid App Check token is required');
     }
     if (!this.socket) { this.createSocket(); }
     this.closed = false;
@@ -148,6 +156,31 @@ export default class SocketTransport extends EventEmitter {
 
   disableReconnection () {
     this.socket?.io?.reconnection?.(false);
+  }
+
+  isAppCheckUsable () {
+    return typeof this.config.appCheckValidator !== 'function' || this.config.appCheckValidator();
+  }
+
+  replaceAppCheckToken (token, expiresAt) {
+    this.config.appCheckToken = token || '';
+    this.config.appCheckExpiresAt = Number(expiresAt) || 0;
+    if (!this.socket?.io?.opts) { return; }
+    const managerOptions = this.socket.io.opts;
+    managerOptions.query = { ...(managerOptions.query || {}) };
+    if (token) { managerOptions.query.appCheckToken = token; } else { delete managerOptions.query.appCheckToken; }
+    managerOptions.extraHeaders = token ? { ...(managerOptions.extraHeaders || {}), 'x-app-check-token': token } : undefined;
+  }
+
+  pauseForAppCheck () {
+    this.disableReconnection();
+  }
+
+  resumeAfterAppCheck () {
+    if (!this.isAppCheckUsable()) { return false; }
+    this.socket?.io?.reconnection?.(this.config.reconnection !== false);
+    if (this.socket && !this.socket.connected && !this.closed) { this.socket.connect(); }
+    return true;
   }
 
   rejectPending (error) {

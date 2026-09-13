@@ -4,12 +4,13 @@ import { Server as SoketIOServer } from 'socket.io';
 import BotStateManager from './services/BotStateManager.js';
 import { handleAutoRun } from './services/utils/autoRun/handleAutoRun.js';
 import { updateEvents } from './services/utils/constants/updateEvents.js';
+import { defaultAppCheckAcquirer } from './services/appCheck/BrowserAppCheckAcquirer.js';
 const app = express();
 const PORT = 3000;
 
 // WOLF API Client Configuration
 const WOLF_CONFIG = {
-  host: 'wss://v3.palringo.com',
+  host: 'wss://v3-rc.palringo.com',
   port: 443,
   token: '', // Replace with your actual WOLF token
   device: 'mobile',
@@ -36,6 +37,38 @@ const io = new SoketIOServer(server, {
 const clientApiMap = new Map();
 const clientCleanupMap = new Map();
 
+defaultAppCheckAcquirer.sweepStaleProfiles().catch(() => {});
+
+async function finishMainInitialization (manager, clientSocket, request) {
+  if (manager.getMainBot()?.connected || manager._destroyed || !clientSocket.connected) { return; }
+  const descriptor = manager.getConnectionDescriptor('main', 0, request.mainBotConfig.token);
+  await manager.connect('main', 0, descriptor);
+  if (!clientSocket.connected || manager._destroyed) { return; }
+  clientSocket.emit(updateEvents.counter.update);
+  clientSocket.emit('api-ready');
+  manager.appCheckRegistry.emitSnapshot();
+  if (request?.baseConfig?.autoRun) {
+    manager.startAutoRunTask(handleAutoRun);
+  } else if (request?.baseConfig?.excludeAdmins) {
+    const task = manager.ensureAppCheck('classification').catch(error => {
+      console.warn(`Classification App Check prefetch failed: ${error?.message || 'unknown error'}`);
+      const record = manager.appCheckRegistry.get('classification');
+      if (record) {
+        manager.appCheckRegistry.warn(
+          record,
+          'تعذر الحصول على رمز التحقق الخاص بحسابات التصنيف. استخدم إعادة محاولة التحقق قبل بدء التصنيف.'
+        ).catch(() => {});
+      }
+    });
+    manager.classificationAppCheckPrefetchTask = task;
+    task.finally(() => {
+      if (manager.classificationAppCheckPrefetchTask === task) {
+        manager.classificationAppCheckPrefetchTask = null;
+      }
+    });
+  }
+}
+
 async function cleanupClient (clientSocket) {
   if (clientSocket.cleanupPromise) { return clientSocket.cleanupPromise; }
   const botId = clientSocket.botId;
@@ -57,6 +90,8 @@ io.on('connection', async (clientSocket) => {
     // console.log('Client connected:', clientSocket.id);
 
     clientSocket.on('init-api', async (request) => {
+      if (clientSocket.initializing || clientSocket.botId) { return; }
+      clientSocket.initializing = true;
       // console.log('🚀 ~ request:', request);
       const config = {
         ...request,
@@ -125,12 +160,18 @@ io.on('connection', async (clientSocket) => {
       clientSocket.botId = botId;
       clientApiMap.set(botId, wolfStateManager);
       try {
-        await wolfStateManager.connect('main');
+        await wolfStateManager.ensureAppCheck('main', 0, {
+          accessToken: request.mainBotConfig.token,
+          continuationKey: 'initialize-main',
+          continuation: () => finishMainInitialization(wolfStateManager, clientSocket, request)
+        });
+        await finishMainInitialization(wolfStateManager, clientSocket, request);
       } catch (error) {
-        // Transport errors can contain the complete token-bearing websocket URL.
-        console.error(`Failed to initialize botId ${botId}: ${error?.message || 'Unknown connection error'}`);
-        await cleanupClient(clientSocket);
-        if (clientSocket.connected) { clientSocket.disconnect(true); }
+        console.error(`Failed to initialize botId ${botId}: ${error?.message || 'Unknown initialization error'}`);
+        if (error?.code !== 'APP_CHECK_ACQUISITION_FAILED') {
+          await cleanupClient(clientSocket);
+          if (clientSocket.connected) { clientSocket.disconnect(true); }
+        }
         return;
       }
       if (!clientSocket.connected || wolfStateManager._destroyed) {
@@ -138,11 +179,6 @@ io.on('connection', async (clientSocket) => {
         return;
       }
       // console.log("🚀 ~ botId:", botId)
-      if (request?.baseConfig?.autoRun) {
-        await handleAutoRun(wolfStateManager);
-      }
-      clientSocket.emit(updateEvents.counter.update);
-      clientSocket.emit('api-ready');
       // Now you can handle other events
     }); // When creating the WolfClient instance
 
@@ -169,6 +205,18 @@ io.on('connection', async (clientSocket) => {
       if (manager) { await manager.handleIgnoreAllUnknownUsers(); }
     });
 
+    clientSocket.on('app-check:retry', async () => {
+      const manager = clientApiMap.get(clientSocket.botId);
+      if (!manager) { return; }
+      await manager.appCheckRegistry.retryFailed().catch(() => {});
+    });
+
+    clientSocket.on('app-check:pause-retry-main', async () => {
+      const manager = clientApiMap.get(clientSocket.botId);
+      if (!manager) { return; }
+      await manager.appCheckRegistry.retryFailed({ acknowledgeMain: true }).catch(() => {});
+    });
+
     // clientSocket.on("stop-bots", async () => {
     //     await clientApiMap.get(clientSocket.id)?.clearState();
     //     console.log("Stopping bots / main bot connected:", clientApiMap.get(clientSocket.id).getMainBot().connected);
@@ -190,7 +238,7 @@ io.on('connection', async (clientSocket) => {
       await cleanupClient(clientSocket);
     });
   } catch (error) {
-    console.log('🚀 ~ error:', error);
+    console.log('🚀 ~ error:', error?.message || 'unknown error');
   }
 });
 

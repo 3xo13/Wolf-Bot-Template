@@ -37,6 +37,7 @@ async function sendPatchMessages (botManager, campaignGeneration) {
   try {
     while (!botManager.isClassificationCancelled(classificationGeneration) &&
       isAdCampaignActive(botManager, campaignGeneration)) {
+      if (!await botManager.waitForAppCheckResume()) { return 'cancelled'; }
       const users = botManager.getUsers();
       if (currentIndex >= users.length) {
         if (botManager.hasPendingClassification()) {

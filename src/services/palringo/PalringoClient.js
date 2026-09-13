@@ -53,6 +53,7 @@ export default class PalringoClient extends EventEmitter {
       this.state = 'disconnected';
       this.emit('reconnectFailed', error);
     });
+    this.transport.on('appCheckUnavailable', () => this.emit('appCheckUnavailable'));
     this.transport.on('packet', (event, packet) => {
       this.events.route(event, packet).catch(error => this.emit('internalError', error));
     });
@@ -177,6 +178,17 @@ export default class PalringoClient extends EventEmitter {
       throw new PalringoConnectionError('Client is not authenticated and ready');
     }
     return await this.dispatcher.request(command, payload, options);
+  }
+
+  replaceAppCheckToken (token, expiresAt) {
+    this.config.appCheckToken = token || '';
+    this.config.appCheckExpiresAt = Number(expiresAt) || 0;
+    this.transport.replaceAppCheckToken(token, expiresAt);
+    this.transport.resumeAfterAppCheck();
+  }
+
+  pauseForAppCheck () {
+    this.transport.pauseForAppCheck();
   }
 
   async disconnect () {

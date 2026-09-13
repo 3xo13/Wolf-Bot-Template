@@ -38,6 +38,11 @@ export const handleAdAccountCommand = async (botManager, data) => {
     if (!data.startsWith('WE-')) {
       throw new Error('يرجى ادخال توكين الحساب بشكل صحيح\nWE-AAAAAAAA');
     }
+    await botManager.ensureAppCheck('ad', currentAdBotIndex, {
+      accessToken: data,
+      continuationKey: `manual-ad-${currentAdBotIndex}`,
+      continuation: () => handleAdAccountCommand(botManager, data)
+    });
     // Set the ad bot token for authentication
     botManager.setAdBotToken(data, currentAdBotIndex);
     updateTimers(botManager, 'ad');
@@ -47,7 +52,7 @@ export const handleAdAccountCommand = async (botManager, data) => {
     if (!await connectAdAccountBatch(botManager, currentAdBotIndex)) { return; }
 
     // Notify the user that ad bots are ready and provide next step instructions
-    await sendUpdateEvent(botManager, updateEvents.ad.setup, { token: data, index: currentAdBotIndex });
+    await sendUpdateEvent(botManager, updateEvents.ad.setup, { index: currentAdBotIndex });
 
     if (!botManager.config.adBotConfig.every(adBotConfig => adBotConfig.token)) {
       sendPrivateMessage(
@@ -76,7 +81,7 @@ export const handleAdAccountCommand = async (botManager, data) => {
     }
   } catch (error) {
     // Log and re-throw any errors encountered during ad bot setup
-    console.log('🚀 ~ handleAdAccountCommand ~ error:', error);
+    console.log('🚀 ~ handleAdAccountCommand ~ error:', error?.message || 'unknown error');
     throw error;
   } finally {
     botManager.setIsBusy(false);

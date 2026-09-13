@@ -69,6 +69,10 @@ async function abortForOutage (botManager, generation) {
 function refreshAvailability (botManager, generation) {
   if (!botManager._adCampaignActive || generation !== botManager._campaignGeneration) { return; }
   signalAvailabilityChange(botManager);
+  if (botManager.isAppCheckPaused?.()) {
+    clearOutageTimer(botManager);
+    return;
+  }
   if (getConnectedAdBots(botManager).length) {
     clearOutageTimer(botManager);
     return;
@@ -84,6 +88,17 @@ function refreshAvailability (botManager, generation) {
       .finally(() => { botManager._adCampaignAbortPromise = null; });
   }, timeout);
   botManager._adCampaignOutageTimer.unref?.();
+}
+
+export function suspendAdCampaignOutageMonitor (botManager) {
+  if (!botManager._adCampaignActive) { return; }
+  clearOutageTimer(botManager);
+  signalAvailabilityChange(botManager);
+}
+
+export function resumeAdCampaignOutageMonitor (botManager) {
+  if (!botManager._adCampaignActive) { return; }
+  refreshAvailability(botManager, botManager._campaignGeneration);
 }
 
 export function startAdCampaignMonitor (botManager) {
@@ -117,6 +132,7 @@ export function isAdCampaignActive (botManager, generation) {
 
 export async function waitForConnectedAdBot (botManager, generation) {
   while (isAdCampaignActive(botManager, generation)) {
+    await botManager.waitForAppCheckResume?.();
     if (getConnectedAdBots(botManager).length) { return true; }
     await new Promise(resolve => botManager._adAvailabilityWaiters.add(resolve));
   }

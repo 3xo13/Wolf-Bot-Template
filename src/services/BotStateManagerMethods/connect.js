@@ -54,19 +54,22 @@ async function rejectStaleConnection (manager, botType, botInstance, generation,
   throw error;
 }
 
-export async function connectFn (manager, botType, adBotIndex) {
+export async function connectFn (manager, botType, accountIndex = 0, descriptor = null) {
   if (manager.isReseting) {
     throw new Error('البوت في وضع إعادة التعيين، لا يمكن المتابعة الآن');
   }
   const connectionGeneration = manager._connectionGeneration;
   const connectionTypeGeneration = manager._connectionTypeGenerations?.[botType] || 0;
-  const { mainBotConfig, roomBotConfig, adBotConfig } = manager.config;
+  const connectionDescriptor = descriptor || manager.getConnectionDescriptor(botType, accountIndex);
+  const connectionConfig = connectionDescriptor.config;
   let botInstance;
   switch (botType) {
     case 'main':
       botInstance = new CustomWOLF(manager, 'main');
-      await loginOrDispose(botInstance, mainBotConfig);
+      botInstance._accountIndex = accountIndex;
+      await loginOrDispose(botInstance, connectionConfig);
       await rejectStaleConnection(manager, botType, botInstance, connectionGeneration, connectionTypeGeneration);
+      manager.appCheckRegistry.registerConsumer(connectionDescriptor.recordId, botInstance);
 
       // Setup message routing for ad and magic bot types
       botInstance.setupMessageRouting({
@@ -81,9 +84,10 @@ export async function connectFn (manager, botType, adBotIndex) {
       break;
     case 'room': {
       botInstance = new CustomWOLF(manager, 'room');
-      const roomConfig = { ...roomBotConfig, token: manager.roomBotsTokens.at(-1) };
-      await loginOrDispose(botInstance, roomConfig);
+      botInstance._accountIndex = accountIndex;
+      await loginOrDispose(botInstance, connectionConfig);
       await rejectStaleConnection(manager, botType, botInstance, connectionGeneration, connectionTypeGeneration);
+      manager.appCheckRegistry.registerConsumer(connectionDescriptor.recordId, botInstance);
 
       // For magic bots, set up group message and update listeners
       if (manager.getBotType() === 'magic') {
@@ -145,11 +149,11 @@ export async function connectFn (manager, botType, adBotIndex) {
     }
     case 'ad':
       botInstance = new CustomWOLF(manager, 'ad');
-      if (!adBotConfig[adBotIndex]) {
-        throw new Error(`Ad bot configuration not found at index ${adBotIndex}`);
-      }
-      await loginOrDispose(botInstance, { ...adBotConfig[adBotIndex] });
+      botInstance._accountIndex = accountIndex;
+      if (!manager.config.adBotConfig[accountIndex]) { throw new Error(`Ad bot configuration not found at index ${accountIndex}`); }
+      await loginOrDispose(botInstance, connectionConfig);
       await rejectStaleConnection(manager, botType, botInstance, connectionGeneration, connectionTypeGeneration);
+      manager.appCheckRegistry.registerConsumer(connectionDescriptor.recordId, botInstance);
       break;
     default:
       throw new Error(`Unknown bot type: ${botType}`);

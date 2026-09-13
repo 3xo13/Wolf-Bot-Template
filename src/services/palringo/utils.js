@@ -45,7 +45,7 @@ export function decodeText (value) {
 }
 
 export function normalizeEndpoint (host, port) {
-  const rawHost = String(host || '').trim() || 'https://v3.palringo.com';
+  const rawHost = String(host || '').trim() || 'https://v3-rc.palringo.com';
   const withProtocol = /^[a-z]+:\/\//iu.test(rawHost) ? rawHost : `https://${rawHost}`;
   const endpoint = new URL(withProtocol.replace(/^wss:/iu, 'https:').replace(/^ws:/iu, 'http:'));
   if (port) { endpoint.port = String(port); }

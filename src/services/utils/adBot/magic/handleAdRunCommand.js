@@ -11,6 +11,7 @@ import { startAdCampaignMonitor } from '../campaignAvailability.js';
 
 export const handleAdRunCommand = async (botManager) => {
   try {
+    if (!await botManager.waitForAppCheckResume()) { return; }
     const mainBot = botManager.getMainBot();
     const messagesLength = botManager.getMessages().length;
     const messagesCount = botManager.getMessageCount();

@@ -32,10 +32,14 @@ ${userMessages.adConnectionCooldownStarted}`,
 
 export async function connectAdAccountBatch (botManager, adBotIndex) {
   try {
+    const descriptor = botManager.getConnectionDescriptor(
+      'ad', adBotIndex, botManager.config.adBotConfig[adBotIndex]?.token
+    );
     await connectBotBatch(botManager, {
       botType: 'ad',
       count: botManager.config.baseConfig.instanceCount,
-      adBotIndex
+      adBotIndex,
+      descriptor
     });
     return true;
   } catch (error) {

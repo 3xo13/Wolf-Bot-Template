@@ -2,8 +2,6 @@ export const DEFAULT_CONNECTION = Object.freeze({
   host: 'https://v3.palringo.com',
   port: 443,
   device: 'mobile',
-  onlineState: 1,
-  version: '2.7.6',
   connectTimeout: 20000,
   authenticationTimeout: 30000,
   requestTimeout: 30000,

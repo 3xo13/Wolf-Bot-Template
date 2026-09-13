@@ -18,6 +18,15 @@ import { userMessages } from './constants/userMessages.js';
 export const handleMagicBotCommand = async (command, args) => {
   const { clientSocket, botManager } = args;
   const mainBot = botManager.getMainBot();
+  const [commandName, data, ...rest] = command.body.split('\n');
+  if (commandName === 'إعادة محاولة التحقق') {
+    await botManager.appCheckRegistry.retryFailed();
+    return;
+  }
+  if (commandName === 'إيقاف مؤقت وإعادة محاولة التحقق') {
+    await botManager.appCheckRegistry.retryFailed({ acknowledgeMain: true });
+    return;
+  }
   if (botManager.isReseting) {
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
@@ -27,9 +36,6 @@ export const handleMagicBotCommand = async (command, args) => {
     return;
   }
   try {
-    const [commandName, data, ...rest] = command
-      .body
-      .split('\n');
     switch (commandName) {
       case 'اعادة فحص الاعضاء':
       case 'اعادة فحص المستخدمين':
@@ -99,7 +105,7 @@ export const handleMagicBotCommand = async (command, args) => {
         break;
     }
   } catch (error) {
-    console.log('🚀 ~ handleCommand ~ error:', error);
+    console.log('🚀 ~ handleCommand ~ error:', error?.message || 'unknown error');
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
       error.message,

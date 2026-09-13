@@ -14,7 +14,10 @@ export function assertConnectionBatchAvailable (botManager, botType) {
 export async function connectBotBatch (botManager, {
   botType,
   count,
-  adBotIndex
+  adBotIndex,
+  accountIndex = adBotIndex ?? 0,
+  descriptor,
+  descriptors
 }) {
   if (!['room', 'ad'].includes(botType)) {
     throw new Error(`Unsupported connection batch type: ${botType}`);
@@ -24,9 +27,11 @@ export async function connectBotBatch (botManager, {
 
   let invalidated = false;
   const task = (async () => {
-    const attempts = Array.from({ length: Math.max(0, count) }, async () => {
+    const attempts = Array.from({ length: Math.max(0, count) }, async (_, index) => {
       try {
-        return await botManager.connect(botType, adBotIndex);
+        const selectedDescriptor = descriptors?.[index] || descriptor;
+        const selectedIndex = selectedDescriptor?.accountIndex ?? accountIndex;
+        return await botManager.connect(botType, selectedIndex, selectedDescriptor);
       } catch (error) {
         if (!invalidated) {
           invalidated = true;

@@ -12,6 +12,7 @@ export const handleReset = async (botManager) => {
     startAuthenticatedConnectionCooldowns(botManager);
     await sendPrivateMessage(botManager.config.baseConfig.orderFrom, userMessages.stateReset, mainBot, mainBot);
     await sendUpdateEvent(botManager, updateEvents.state.reset, {});
+    botManager.appCheckRegistry.emitSnapshot();
   } catch (error) {
     console.log('🚀 ~ handleReset ~ error:', error);
     throw error;

@@ -1,6 +1,7 @@
 import { io } from 'socket.io-client';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+import { randomUUID } from 'node:crypto';
 
 const CONNECT_TIMEOUT = 15000;
 const REQUEST_TIMEOUT = 30000;
@@ -19,8 +20,18 @@ function createProxyAgent (proxy) {
     : new HttpsProxyAgent(url);
 }
 
+function classificationObjectionError (value) {
+  const body = value?.body ?? value ?? {};
+  const code = body.code ?? body.headers?.code;
+  const subCode = body.subCode ?? body.headers?.subCode;
+  const error = new Error(`Classification connection was rejected (${code ?? 'unknown'}:${subCode ?? 'unknown'})`);
+  error.code = code;
+  error.subCode = subCode;
+  return error;
+}
+
 export function buildAnonymousConnection (config = {}) {
-  const host = String(config?.host || 'wss://v3.palringo.com').replace(/^wss:/, 'https:');
+  const host = String(config?.host || 'wss://v3-rc.palringo.com').replace(/^wss:/, 'https:');
   const agent = createProxyAgent(config?.proxy);
   const options = {
     transports: ['websocket'],
@@ -29,7 +40,17 @@ export function buildAnonymousConnection (config = {}) {
     reconnectionDelayMax: 15000,
     reconnectionAttempts: Infinity,
     timeout: CONNECT_TIMEOUT,
-    query: { device: 'web' }
+    forceNew: true,
+    multiplex: false,
+    query: {
+      device: 'web',
+      token: config.anonymousToken || `wjs-${randomUUID()}`,
+      isAppCheckEnabled: 'true',
+      ...(config.appCheckToken ? { appCheckToken: config.appCheckToken } : {})
+    },
+    extraHeaders: config.appCheckToken
+      ? { 'x-app-check-token': config.appCheckToken }
+      : undefined
   };
   if (agent) { options.agent = agent; }
   return { url: `${host}:${config.port || 443}/`, options };
@@ -40,7 +61,7 @@ export function getClassificationConnectionConfig (manager) {
 }
 
 export default class AnonymousClassificationBot {
-  constructor (manager, index) {
+  constructor (manager, index, descriptor = {}, { socketFactory = io } = {}) {
     this.manager = manager;
     this.index = index;
     this.socket = null;
@@ -51,6 +72,8 @@ export default class AnonymousClassificationBot {
     this.reconnecting = false;
     this.pendingRequests = new Set();
     this.cancelPendingConnect = null;
+    this.descriptor = descriptor;
+    this.socketFactory = socketFactory;
   }
 
   get cooldownMilliseconds () {
@@ -64,9 +87,13 @@ export default class AnonymousClassificationBot {
   async connect () {
     if (this.connected || this.socket?.connected) { return this; }
     this.closed = false;
-    const config = getClassificationConnectionConfig(this.manager);
+    const config = { ...getClassificationConnectionConfig(this.manager), ...this.descriptor };
     const { url, options } = buildAnonymousConnection(config);
-    this.socket = io(url, options);
+    if (!config.appCheckToken || !this.manager.appCheckRegistry?.get('classification')?.expiresAt ||
+      this.manager.appCheckRegistry.get('classification').expiresAt <= Date.now()) {
+      throw new Error('Classification App Check token is unavailable');
+    }
+    this.socket = this.socketFactory(url, options);
 
     this.socket.on('disconnect', () => {
       this.reconnecting = !this.closed;
@@ -92,6 +119,20 @@ export default class AnonymousClassificationBot {
         this.manager.signalRecipientChange();
       }
     });
+    this.socket.on('objection', _objection => {
+      const wasConnected = this.connected;
+      this.connected = false;
+      this.reconnecting = false;
+      if (wasConnected) { this.emitCount(); }
+      this.manager.signalRecipientChange();
+    });
+    this.socket.io?.on?.('reconnect_attempt', () => {
+      const record = this.manager.appCheckRegistry?.get('classification');
+      if (!record?.token || record.expiresAt <= Date.now()) {
+        this.socket?.io?.reconnection?.(false);
+        this.manager.appCheckRegistry?.handleConsumerUnavailable?.('classification');
+      }
+    });
 
     await new Promise((resolve, reject) => {
       let settled = false;
@@ -110,14 +151,17 @@ export default class AnonymousClassificationBot {
       const onError = error => {
         finish(reject, error instanceof Error ? error : new Error(String(error)));
       };
+      const onObjection = objection => finish(reject, classificationObjectionError(objection));
       const cleanup = () => {
         this.socket?.off('welcome', onWelcome);
         this.socket?.off('connect_error', onError);
+        this.socket?.off('objection', onObjection);
         this.cancelPendingConnect = null;
       };
       this.cancelPendingConnect = () => finish(reject, new Error('Classification bot is closed'));
       this.socket.on('welcome', onWelcome);
       this.socket.on('connect_error', onError);
+      this.socket.on('objection', onObjection);
     });
     return this;
   }
@@ -133,6 +177,7 @@ export default class AnonymousClassificationBot {
   }
 
   async requestProfiles (ids, extended) {
+    await this.manager.waitForAppCheckResume();
     await this.waitForRequestSlot();
     if (!this.connected || !this.socket?.connected) { throw new Error('Classification bot is not connected'); }
     this.cooldownUntil = Date.now() + this.cooldownMilliseconds;
@@ -177,6 +222,20 @@ export default class AnonymousClassificationBot {
       throw error;
     }
     return response;
+  }
+
+  replaceAppCheckToken (token, expiresAt) {
+    this.descriptor = { ...this.descriptor, appCheckToken: token, appCheckExpiresAt: expiresAt };
+    if (!this.socket?.io?.opts) { return; }
+    this.socket.io.opts.query = { ...(this.socket.io.opts.query || {}) };
+    if (token) { this.socket.io.opts.query.appCheckToken = token; } else { delete this.socket.io.opts.query.appCheckToken; }
+    this.socket.io.opts.extraHeaders = token ? { 'x-app-check-token': token } : undefined;
+    this.socket.io.reconnection?.(true);
+    if (!this.socket.connected && !this.closed) { this.socket.connect(); }
+  }
+
+  pauseForAppCheck () {
+    this.socket?.io?.reconnection?.(false);
   }
 
   async disconnect () {

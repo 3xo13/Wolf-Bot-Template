@@ -9,6 +9,7 @@ import {
 } from '../src/services/utils/classification/platformPrivileges.js';
 import { handleGroupMessage } from '../src/services/utils/roomBot/magic/handleGroupMessage.js';
 import { getAllChannelMembers } from '../src/services/utils/roomBot/getAllChannelMembers.js';
+import { getChannelMembers } from '../src/services/utils/roomBot/getChannelMembers.js';
 import {
   connectPreparationRoomBots,
   getLowRoomClassificationWorkerCount,
@@ -17,6 +18,7 @@ import {
 } from '../src/services/utils/roomBot/handlePrepareCommand.js';
 import {
   ensureClassificationBots,
+  connectClassificationBotsInWaves,
   getClassificationBotTarget,
   startClassificationWorkers,
   assertRoomAccountClassificationCapacity,
@@ -56,11 +58,45 @@ import {
 } from '../src/services/utils/roomBot/magic/roomAccountMessages.js';
 
 function manager () {
-  return new BotStateManager({
+  const botManager = new BotStateManager({
     baseConfig: { botType: 'ad', excludeAdmins: true },
     roomBotConfig: { token: [] },
     adBotConfig: []
+  }, {
+    appCheck: {
+      acquirer: {
+        acquire: async () => ({
+          token: `test-act-${Math.random()}`,
+          fingerprint: `test-${Math.random()}`,
+          issuedAt: Date.now(),
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000
+        })
+      }
+    }
   });
+  botManager.appCheckRegistry.records.set('classification', {
+    id: 'classification',
+    type: 'classification',
+    index: 0,
+    accessToken: '',
+    proxy: { enabled: false },
+    configFingerprint: 'test-classification',
+    token: 'test-classification-act',
+    fingerprint: 'test-classification',
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    state: 'ready',
+    generation: 0,
+    task: null,
+    refreshTimer: null,
+    expiryTimer: null,
+    continuations: new Map(),
+    resumeContinuations: false,
+    warningAcknowledged: false,
+    consumed: false,
+    message: ''
+  });
+  return botManager;
 }
 
 function fakeRoomBot (profileFor, requests) {
@@ -818,6 +854,61 @@ test('classification pool scales at the specified boundaries', () => {
   assert.equal(getClassificationBotTarget(145, 100000), 145);
 });
 
+test('stopping during member pagination treats the interrupted request as cancellation', async () => {
+  let rejectRequest;
+  const botManager = {
+    isReseting: false,
+    isClassificationCancelled: () => false,
+    waitForAppCheckResume: async () => true
+  };
+  const roomBot = {
+    connected: true,
+    websocket: {
+      emit: async () => await new Promise((resolve, reject) => { rejectRequest = reject; })
+    }
+  };
+
+  const extraction = getChannelMembers(botManager, roomBot, 123, 'regular', 100, null, false, 1);
+  await new Promise(resolve => setImmediate(resolve));
+  botManager.isReseting = true;
+  rejectRequest(new Error('Connection interrupted'));
+
+  const result = await extraction;
+  assert.equal(result.success, true);
+  assert.equal(result.totalMembers, 0);
+});
+
+test('classification sockets connect in bounded waves instead of one full-pool burst', async () => {
+  let active = 0;
+  let maximumActive = 0;
+  let registered = 0;
+  const botManager = {
+    classificationWorkersActive: false,
+    isClassificationCancelled: () => false,
+    appCheckRegistry: { registerConsumer: () => { registered++; } }
+  };
+  const bots = Array.from({ length: 24 }, () => ({
+    connect: async () => {
+      active++;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      active--;
+    },
+    disconnect: async () => {}
+  }));
+
+  const results = await connectClassificationBotsInWaves(
+    botManager,
+    bots,
+    { recordId: 'classification' },
+    1
+  );
+
+  assert.equal(results.filter(result => result.connected).length, bots.length);
+  assert.equal(registered, bots.length);
+  assert.ok(maximumActive <= 6);
+});
+
 test('room and classification pools have independent 145-bot capacity', async () => {
   assert.doesNotThrow(() => assertRoomAccountClassificationCapacity(145));
   assert.throws(() => assertRoomAccountClassificationCapacity(146), /145/);
@@ -859,9 +950,11 @@ test('classification connection is anonymous and identifies as web', () => {
     proxy: { enabled: false }
   });
   assert.equal(url, 'https://v3.palringo.com:443/');
-  assert.deepEqual(options.query, { device: 'web' });
+  assert.equal(options.query.device, 'web');
+  assert.equal(options.query.isAppCheckEnabled, 'true');
+  assert.match(options.query.token, /^wjs-/);
   assert.equal('auth' in options, false);
-  assert.equal('token' in options, false);
+  assert.notEqual(options.query.token, 'must-not-leak');
 });
 
 test('classification connections use only their dedicated optional proxy', () => {

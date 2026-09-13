@@ -55,7 +55,18 @@ export const handleRoomCommand = async (token, botManager) => {
     if (!token.startsWith('WE-')) {
       throw new Error('يرجى ادخال توكين الحساب بشكل صحيح\nWE-AAAAAAAA');
     }
+    if (botManager.config.baseConfig.excludeAdmins) {
+      await botManager.waitForClassificationAppCheckPrefetch();
+      botManager.getConnectionDescriptor('classification');
+    }
     const instanceCount = botManager.config.baseConfig.instanceLimit;
+    const roomAccountIndex = botManager.roomBotsTokens.length;
+    await botManager.ensureAppCheck('room', roomAccountIndex, {
+      accessToken: token,
+      continuationKey: `manual-room-${roomAccountIndex}`,
+      continuation: () => handleRoomCommand(token, botManager)
+    });
+    const descriptor = botManager.getConnectionDescriptor('room', roomAccountIndex, token);
 
     const futureRoomBotCount = botManager.getRoomBots().length + 1;
     assertRoomBotPoolCapacity(futureRoomBotCount);
@@ -64,10 +75,11 @@ export const handleRoomCommand = async (token, botManager) => {
     // Connect the room bot
     let newRoomBot;
     try {
-      [newRoomBot] = await connectBotBatch(botManager, { botType: 'room', count: 1 });
+      [newRoomBot] = await connectBotBatch(botManager, {
+        botType: 'room', count: 1, accountIndex: roomAccountIndex, descriptor
+      });
     } catch (error) {
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
-      await ensureClassificationBots(botManager);
       if (error.code === CONNECTION_BATCH_BUSY) { throw error; }
       startRoomConnectionCooldown(botManager);
       const connectionError = new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`);
@@ -85,7 +97,6 @@ export const handleRoomCommand = async (token, botManager) => {
       botManager.removeBot('room', newRoomBot);
       await newRoomBot.disconnect();
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
-      await ensureClassificationBots(botManager);
       startRoomConnectionCooldown(botManager);
       throw new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`, { cause: error });
     }
@@ -97,7 +108,6 @@ export const handleRoomCommand = async (token, botManager) => {
       botManager.removeBot('room', newRoomBot);
       await newRoomBot.disconnect();
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
-      await ensureClassificationBots(botManager);
       startRoomConnectionCooldown(botManager);
       throw new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`, { cause: error });
     }
@@ -138,7 +148,7 @@ export const handleRoomCommand = async (token, botManager) => {
     }
 
     // send client updates
-    await sendUpdateEvent(botManager, updateEvents.room.setup, { token });
+    await sendUpdateEvent(botManager, updateEvents.room.setup, {});
     await sendUpdateEvent(botManager, updateEvents.channels.setup, { channels: channelsIds });
 
     setStepState(botManager, 'room');
@@ -161,7 +171,7 @@ export const handleRoomCommand = async (token, botManager) => {
     }
   } catch (error) {
     // Log and rethrow any errors encountered during setup
-    console.log('🚀 ~ handleRoomCommand ~ error:', error);
+    console.log('🚀 ~ handleRoomCommand ~ error:', error?.message || 'unknown error');
     throw error;
   }
 };

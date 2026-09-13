@@ -20,6 +20,9 @@ class CustomWOLF extends PalringoClient {
     this.on('subscriptionRestoreFailed', errors => {
       console.error(`Bot ${this.botType} (${this.currentSubscriber?.id}) reconnected but could not restore every subscription:`, errors);
     });
+    this.on('appCheckUnavailable', () => {
+      this.botManager?.appCheckRegistry?.handleConsumerUnavailable?.(this._appCheckRecordId);
+    });
   }
 
   setIsBusy (isBusy) {
@@ -31,9 +34,9 @@ class CustomWOLF extends PalringoClient {
   }
 
   stopSocketReconnection () {
-    const socket = this.websocket?.socket;
-    try { socket?.io?.reconnection?.(false); } catch {}
-    try { socket?.disconnect?.(); } catch {}
+    try { this.transport?.disableReconnection?.(); } catch {}
+    try { this.websocket?.socket?.io?.reconnection?.(false); } catch {}
+    try { this.websocket?.socket?.disconnect?.(); } catch {}
   }
 
   async login (config) {

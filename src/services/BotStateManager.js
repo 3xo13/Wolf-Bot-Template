@@ -17,9 +17,12 @@ import {
 } from './utils/classification/unknownUsers.js';
 import { clearAuthenticatedConnectionCooldowns } from './utils/roomBot/roomConnectionCooldown.js';
 import { cancelAdCampaignMonitor } from './utils/adBot/campaignAvailability.js';
+import { resumeAdCampaignOutageMonitor, suspendAdCampaignOutageMonitor } from './utils/adBot/campaignAvailability.js';
+import AppCheckRegistry from './appCheck/AppCheckRegistry.js';
+import { isAppCheckTokenUsable } from './appCheck/token.js';
 
 class BotStateManager {
-  constructor (config) {
+  constructor (config, dependencies = {}) {
     this.config = config;
     this.mainBot = null; // Main bot instance
     this.roomBots = []; // Array of room bot instances
@@ -98,6 +101,12 @@ class BotStateManager {
     this.isReseting = false;
     this._destroyed = false; // Flag to indicate if the manager has been destroyed
     this._disconnectCleanupPromise = null;
+    this.appCheckPauseReasons = new Set();
+    this._appCheckWaiters = new Set();
+    this._autoRunGeneration = 0;
+    this._autoRunTask = null;
+    this.appCheckRegistry = new AppCheckRegistry(this, dependencies.appCheck);
+    this.classificationAppCheckPrefetchTask = null;
   }
 
   // Set the socket connection instance
@@ -113,7 +122,179 @@ class BotStateManager {
   }
 
   // Create and connect a new bot instance based on type
-  async connect (botType, adBotIndex) { return connectFn(this, botType, adBotIndex); }
+  async connect (botType, accountIndex = 0, descriptor = null) { return connectFn(this, botType, accountIndex, descriptor); }
+
+  getAppCheckTarget (type, index = 0, accessToken) {
+    const config = type === 'main'
+      ? this.config.mainBotConfig
+      : type === 'room'
+        ? this.config.roomBotConfig
+        : type === 'ad'
+          ? this.config.adBotConfig[index]
+          : this.config.classificationBotConfig;
+    return {
+      type,
+      index,
+      accessToken: type === 'classification' ? '' : String(accessToken ?? config?.token ?? ''),
+      proxy: config?.proxy || config || {}
+    };
+  }
+
+  async ensureAppCheck (type, index = 0, options = {}) {
+    return await this.appCheckRegistry.ensure(
+      this.getAppCheckTarget(type, index, options.accessToken),
+      options
+    );
+  }
+
+  async waitForClassificationAppCheckPrefetch () {
+    if (this.classificationAppCheckPrefetchTask) {
+      try { await this.classificationAppCheckPrefetchTask; } catch {}
+    }
+  }
+
+  getConnectionDescriptor (type, index = 0, accessToken) {
+    const record = this.appCheckRegistry.get(type, index);
+    if (!isAppCheckTokenUsable(record)) {
+      const error = new Error('يلزم الحصول على رمز التحقق من المنصة قبل الاتصال.');
+      error.code = 'APP_CHECK_REQUIRED';
+      throw error;
+    }
+    const config = type === 'main'
+      ? this.config.mainBotConfig
+      : type === 'room'
+        ? this.config.roomBotConfig
+        : type === 'ad'
+          ? this.config.adBotConfig[index]
+          : this.config.classificationBotConfig;
+    return {
+      accountIndex: index,
+      recordId: record.id,
+      config: {
+        ...config,
+        ...(record.wolfConnection?.host
+          ? {
+              host: `wss://${record.wolfConnection.host}`,
+              port: record.wolfConnection.port || 443
+            }
+          : {}),
+        token: type === 'classification' ? undefined : String(accessToken ?? record.accessToken ?? config?.token ?? ''),
+        anonymousToken: type === 'classification' ? record.anonymousToken : undefined,
+        appCheckToken: record.token,
+        appCheckExpiresAt: record.expiresAt,
+        appCheckValidator: () => isAppCheckTokenUsable(this.appCheckRegistry.get(type, index))
+      }
+    };
+  }
+
+  isAppCheckPaused () { return this.appCheckPauseReasons.size > 0; }
+
+  addAppCheckPauseReason (reason) {
+    if (!reason || this.appCheckPauseReasons.has(reason)) { return; }
+    this.appCheckPauseReasons.add(reason);
+    suspendAdCampaignOutageMonitor(this);
+    this.signalRecipientChange();
+  }
+
+  removeAppCheckPauseReason (reason) {
+    if (!this.appCheckPauseReasons.delete(reason)) { return; }
+    if (!this.appCheckPauseReasons.size) {
+      for (const resolve of this._appCheckWaiters) { resolve(); }
+      this._appCheckWaiters.clear();
+      resumeAdCampaignOutageMonitor(this);
+      this.signalRecipientChange();
+    }
+  }
+
+  async waitForAppCheckResume () {
+    await this.appCheckRegistry.refreshExpiredRequiredRecords();
+    while (this.isAppCheckPaused() && !this._destroyed && !this.isReseting) {
+      await new Promise(resolve => this._appCheckWaiters.add(resolve));
+    }
+    return !this._destroyed && !this.isReseting;
+  }
+
+  isAppCheckRecordRequired (record) {
+    if (record.type === 'main') { return true; }
+    if (record.type === 'classification') {
+      return Boolean(this.config.baseConfig.excludeAdmins &&
+        (this.classificationBots.length || this.hasPendingClassification() || this.pendingMagicActivities.size));
+    }
+    if (record.type === 'room') {
+      if (record.consumed && this.getBotType() === 'ad' && !this.roomBots.length) { return false; }
+      return this.roomBots.some(bot => bot._accountIndex === record.index) || Boolean(this._connectionBatches.room);
+    }
+    return this.adBots.some(bot => bot._accountIndex === record.index) || this._adCampaignActive || Boolean(this._connectionBatches.ad);
+  }
+
+  hasActiveHelperWork () {
+    return Boolean(this.roomBots.length || this.adBots.length || this.classificationBots.length ||
+      this._adCampaignActive);
+  }
+
+  startAutoRunTask (runner) {
+    if (this._autoRunTask || this._destroyed || !this.config.baseConfig.autoRun) { return this._autoRunTask; }
+    const generation = ++this._autoRunGeneration;
+    const task = Promise.resolve().then(async () => {
+      if (generation !== this._autoRunGeneration) { return; }
+      await runner(this);
+    });
+    const tracked = task.catch(error => {
+      console.error('Auto-run task failed:', error?.message || 'unknown error');
+    }).finally(() => {
+      if (this._autoRunTask === tracked) { this._autoRunTask = null; }
+    });
+    this._autoRunTask = tracked;
+    return tracked;
+  }
+
+  async handleFatalAppCheckFailure (_record, _error) {
+    if (this._destroyed) { return; }
+    this._destroyed = true;
+    this.isReseting = true;
+    this._connectionGeneration++;
+    this._connectionTypeGenerations.main++;
+    this._connectionTypeGenerations.room++;
+    this._connectionTypeGenerations.ad++;
+    this._classificationGeneration++;
+    this._campaignGeneration++;
+    this._autoRunGeneration++;
+    cancelAdCampaignMonitor(this);
+    for (const resolve of this._appCheckWaiters) { resolve(); }
+    this._appCheckWaiters.clear();
+    const alert = {
+      alertId: `act-${Date.now()}`,
+      reason: 'تعذر تجديد رمز التحقق للحساب الرئيسي بعد انتهاء صلاحيته. تم إيقاف جميع الاتصالات لحماية حالة التشغيل.',
+      timestamp: Date.now(),
+      counts: { room: 0, ad: 0, classification: 0 },
+      immediateRestart: true
+    };
+    await Promise.allSettled([
+      this.mainBot?.disconnect(), this.clearRoomBots(), this.clearAdBots(), this.clearClassificationBots()
+    ].filter(Boolean));
+    await this.appCheckRegistry.destroy({ waitForAcquisitions: false });
+    await new Promise(resolve => {
+      if (!this.socket?.connected) { resolve(); return; }
+      const timer = setTimeout(resolve, 3000);
+      this.socket.emit('app-check:fatal', alert, () => { clearTimeout(timer); resolve(); });
+    });
+    this.socket?.disconnect?.(true);
+  }
+
+  async disconnectIdleMainForAppCheck (record) {
+    const main = this.mainBot;
+    if (!main) { return; }
+    await main.disconnect();
+    record.resumeContinuations = true;
+    record.continuations.set('idle-main-reconnect', async () => {
+      if (this._destroyed || this.mainBot !== main) { return; }
+      await main.connect();
+      main._managerRegistered = true;
+      this.emit('bots:main:connected', {
+        subscriber: { id: main.currentSubscriber?.id, nickname: main.currentSubscriber?.nickname }
+      });
+    });
+  }
 
   invalidateConnectionAttempts (botType) {
     if (botType && Object.hasOwn(this._connectionTypeGenerations, botType)) {
@@ -374,7 +555,7 @@ class BotStateManager {
     try {
       stopMainBotReconnectSchedulerFn(this);
       startMainBotReconnectSchedulerFn(this);
-    } catch (e) { }
+    } catch { }
   }
 
   updateRoomBotsCounter (val) {
@@ -404,14 +585,14 @@ class BotStateManager {
     try {
       // timer stored as milliseconds. Check if less than 60,000 ms (1 minute).
       if (typeof this.roomBotsReconnectTimer === 'number') { return this.roomBotsReconnectTimer < 60000; }
-    } catch (e) { }
+    } catch { }
     return false;
   }
 
   isAdBotsTimerLessThanOneMinute () {
     try {
       if (typeof this.adBotsReconnectTimer === 'number') { return this.adBotsReconnectTimer < 60000; }
-    } catch (e) { }
+    } catch { }
     return false;
   }
 
@@ -431,6 +612,7 @@ class BotStateManager {
   async clearAdBots () {
     const bots = this.adBots;
     this.adBots = [];
+    bots.forEach(bot => this.appCheckRegistry.unregisterConsumer(bot));
     await Promise.allSettled(bots.map(bot => bot.disconnect()));
   }
 
@@ -438,6 +620,7 @@ class BotStateManager {
     const bots = botsToClear ? [...botsToClear] : [...this.roomBots];
     const botSet = new Set(bots);
     this.roomBots = this.roomBots.filter(bot => !botSet.has(bot));
+    bots.forEach(bot => this.appCheckRegistry.unregisterConsumer(bot));
     await Promise.allSettled(bots.map(bot => bot.disconnect()));
   }
 
@@ -447,6 +630,7 @@ class BotStateManager {
     this.classificationBotConnectPromise = null;
     this.classificationWorkerTasks.clear();
     this.emitClassificationBotCount();
+    bots.forEach(bot => this.appCheckRegistry.unregisterConsumer(bot));
     await Promise.allSettled(bots.map(bot => bot.disconnect()));
   }
 
@@ -466,6 +650,7 @@ class BotStateManager {
         this.clearClassificationBots()
       ].filter(Boolean));
       await this.clearState({ terminal: true });
+      await this.appCheckRegistry.destroy();
     })();
     return this._disconnectCleanupPromise;
   }
@@ -475,6 +660,8 @@ class BotStateManager {
     // managed bot arrays. A login that completes after this point must dispose
     // itself instead of becoming an untracked connection.
     this._connectionGeneration++;
+    this._autoRunGeneration++;
+    this._autoRunTask = null;
     cancelAdCampaignMonitor(this);
     clearAuthenticatedConnectionCooldowns(this);
     this.isReseting = true;
@@ -483,6 +670,8 @@ class BotStateManager {
     await this.clearRoomBots();
     await this.clearAdBots();
     await this.clearClassificationBots();
+    this.appCheckRegistry.invalidateTypes(['room', 'ad']);
+    this.removeAppCheckPauseReason('classification');
     this.messagesDeliverdeTo.clear();
     this.currentStep = 1;
     this.lastUserIndex = 0;
@@ -553,6 +742,7 @@ class BotStateManager {
 
   // Remove a bot instance
   removeBot (botType, botInstance) {
+    this.appCheckRegistry.unregisterConsumer(botInstance);
     if (botType === 'main' && this.mainBot === botInstance) {
       this.mainBot = null;
     } else if (botType === 'room') {

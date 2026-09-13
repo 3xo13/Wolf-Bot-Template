@@ -4,6 +4,11 @@ import { queueEligibleActivities, queueEligibleActivity } from './magicQueue.js'
 
 export const MAX_ROOM_BOTS = 145;
 export const MAX_ROOMS_PER_ACCOUNT = MAX_ROOM_BOTS;
+const CLASSIFICATION_CONNECT_CONCURRENCY = 6;
+const CLASSIFICATION_CONNECT_ATTEMPTS = 3;
+const CLASSIFICATION_CONNECT_RETRY_DELAYS_MS = [1000, 2000];
+
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 export function assertRoomAccountClassificationCapacity (roomCount) {
   if (roomCount > MAX_ROOMS_PER_ACCOUNT) {
@@ -32,8 +37,55 @@ async function trimClassificationBots (botManager, target) {
   botManager.emitClassificationBotCount();
 }
 
+async function connectClassificationBot (botManager, bot, descriptor, generation) {
+  let lastError;
+  for (let attempt = 0; attempt < CLASSIFICATION_CONNECT_ATTEMPTS; attempt++) {
+    if (botManager.isClassificationCancelled(generation)) { return { bot, cancelled: true }; }
+    try {
+      await bot.connect();
+      if (botManager.isClassificationCancelled(generation)) {
+        await bot.disconnect();
+        return { bot, cancelled: true };
+      }
+      botManager.appCheckRegistry.registerConsumer(descriptor.recordId, bot);
+      if (botManager.classificationWorkersActive) { startWorker(botManager, bot, generation); }
+      return { bot, connected: true };
+    } catch (error) {
+      lastError = error;
+      await bot.disconnect();
+      if (botManager.isClassificationCancelled(generation)) { return { bot, cancelled: true }; }
+      const retryDelay = CLASSIFICATION_CONNECT_RETRY_DELAYS_MS[attempt];
+      if (!retryDelay) { break; }
+      await wait(retryDelay);
+    }
+  }
+  return { bot, error: lastError || new Error('Classification bot failed to connect') };
+}
+
+export async function connectClassificationBotsInWaves (botManager, bots, descriptor, generation) {
+  const results = new Array(bots.length);
+  let nextIndex = 0;
+  const connectNext = async () => {
+    while (nextIndex < bots.length && !botManager.isClassificationCancelled(generation)) {
+      const index = nextIndex++;
+      results[index] = await connectClassificationBot(botManager, bots[index], descriptor, generation);
+    }
+  };
+  const workerCount = Math.min(CLASSIFICATION_CONNECT_CONCURRENCY, bots.length);
+  await Promise.allSettled(Array.from({ length: workerCount }, connectNext));
+  return results.filter(Boolean);
+}
+
 export async function ensureClassificationBots (botManager, userCount = botManager.seenUsers.size) {
   if (!botManager.config.baseConfig.excludeAdmins) { return []; }
+  await botManager.waitForClassificationAppCheckPrefetch();
+  const appCheck = botManager.appCheckRegistry.get('classification');
+  if (!appCheck?.token || appCheck.expiresAt <= Date.now()) {
+    const error = new Error('رمز التحقق الخاص بحسابات التصنيف غير جاهز. أعد محاولة التحقق أولاً.');
+    error.code = 'APP_CHECK_REQUIRED';
+    throw error;
+  }
+  const descriptor = botManager.getConnectionDescriptor('classification');
   const target = getClassificationBotTarget(botManager.getRoomBots().length, userCount);
   await trimClassificationBots(botManager, target);
   if (botManager.classificationBots.length >= target) { return botManager.classificationBots; }
@@ -45,21 +97,16 @@ export async function ensureClassificationBots (botManager, userCount = botManag
   const task = (async () => {
     const missing = Math.max(0, target - botManager.classificationBots.length);
     const newBots = Array.from({ length: missing }, (_, index) =>
-      new AnonymousClassificationBot(botManager, botManager.classificationBots.length + index)
+      new AnonymousClassificationBot(botManager, botManager.classificationBots.length + index, descriptor.config)
     );
     botManager.classificationBots.push(...newBots);
-    await Promise.allSettled(newBots.map(async bot => {
-      try {
-        await bot.connect();
-        if (botManager.classificationWorkersActive && !botManager.isClassificationCancelled(generation)) {
-          startWorker(botManager, bot, generation);
-        }
-      } catch (error) {
-        console.warn('Anonymous classification bot failed to connect:', error.message);
-        botManager.classificationBots = botManager.classificationBots.filter(item => item !== bot);
-        await bot.disconnect();
-      }
-    }));
+    const results = await connectClassificationBotsInWaves(botManager, newBots, descriptor, generation);
+    const failedBots = new Set(results.filter(result => !result.connected).map(result => result.bot));
+    if (failedBots.size) {
+      botManager.classificationBots = botManager.classificationBots.filter(bot => !failedBots.has(bot));
+      const firstFailure = results.find(result => result.error)?.error;
+      console.warn(`Anonymous classification pool connected ${newBots.length - failedBots.size}/${newBots.length} new bots${firstFailure ? `; first failure: ${firstFailure.message}` : ''}`);
+    }
     botManager.emitClassificationBotCount();
   })();
   const trackedTask = task.finally(() => {
@@ -96,6 +143,10 @@ async function maybeHandleFailure (botManager, result, generation) {
 async function workerLoop (botManager, bot, generation) {
   try {
     while (!botManager.isClassificationCancelled(generation) && botManager.classificationWorkersActive) {
+      if (botManager.isAppCheckPaused()) {
+        await botManager.waitForAppCheckResume();
+        continue;
+      }
       if (!bot.connected || bot.isWorking || botManager.classificationPaused) {
         await botManager.waitForRecipientChange(250);
         continue;
@@ -184,6 +235,11 @@ export async function enqueueMagicCandidate (botManager, userId) {
   if (!botManager.seenUsers.has(id)) { botManager.seenUsers.add(id); }
   botManager.classificationQueue.push(id);
   botManager.queuedUsers.add(id);
+  if (botManager.isAppCheckPaused()) {
+    botManager.emitClassificationStatus('classifying');
+    botManager.signalRecipientChange();
+    return true;
+  }
   await ensureClassificationBots(botManager, botManager.seenUsers.size);
   startClassificationWorkers(botManager, { persistent: true });
   botManager.emitClassificationStatus(botManager.classificationPaused ? 'decision-required' : 'classifying');

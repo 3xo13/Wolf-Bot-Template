@@ -40,8 +40,10 @@ export async function releasePreparationRoomBots (botManager, producerBots, gene
 
 export async function connectPreparationRoomBots (botManager, count) {
   try {
+    const token = botManager.getRoomBotsTokens?.()[0];
+    const descriptor = botManager.getConnectionDescriptor?.('room', 0, token);
     return {
-      bots: await connectBotBatch(botManager, { botType: 'room', count }),
+      bots: await connectBotBatch(botManager, { botType: 'room', count, accountIndex: 0, descriptor }),
       error: null
     };
   } catch (error) {
@@ -65,6 +67,7 @@ export const handlePrepareCommand = async (botManager) => {
   let additionalProducers = [];
   let roomPoolConnectionFailed = false;
   try {
+    if (!await botManager.waitForAppCheckResume()) { return; }
     const initialRoomBot = botManager.getRoomBots()[0];
     if (!checkBotStep(botManager, 'room') || !initialRoomBot) {
       await handleBotStepReplay(botManager);
@@ -73,6 +76,12 @@ export const handlePrepareCommand = async (botManager) => {
     if (!initialRoomBot.connected || !initialRoomBot.currentSubscriber) {
       await initialRoomBot.disconnect();
       throw new Error('بوت الرومات غير متصل، يرجى تغيير الحساب');
+    }
+    if (botManager.config.baseConfig.excludeAdmins) {
+      await botManager.waitForClassificationAppCheckPrefetch();
+      // This only validates the owned preflight record. Browser acquisition
+      // never starts from preparation or classification workers.
+      botManager.getConnectionDescriptor('classification');
     }
 
     botManager.isPreparing = true;
@@ -122,6 +131,7 @@ export const handlePrepareCommand = async (botManager) => {
     // Discovery accounts are no longer classification workers and can be released
     // as soon as every room page has been published.
     if (!await releasePreparationRoomBots(botManager, producerBots, generation)) { return; }
+    botManager.appCheckRegistry.markConsumed('room', 0);
 
     if (botManager.config.baseConfig.excludeAdmins) {
       await waitForClassificationWorkers(botManager, generation);
@@ -151,7 +161,12 @@ export const handlePrepareCommand = async (botManager) => {
     }
   } catch (error) {
     if (generation !== null && botManager.isClassificationCancelled(generation)) { return; }
-    console.error('handlePrepareCommand failed:', error);
+    console.error('handlePrepareCommand failed:', error?.message || 'unknown error');
+    if (error?.code === 'APP_CHECK_REQUIRED') {
+      // No preparation-owned sockets exist yet, so keep the already accepted
+      // primary room account intact for an explicit ACT retry.
+      throw error;
+    }
     if (roomPoolConnectionFailed) {
       // The operator-provided first room bot remains available so preparation
       // can be retried. Only temporary per-room producers are rolled back.

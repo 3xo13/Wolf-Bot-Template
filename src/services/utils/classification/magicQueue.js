@@ -62,6 +62,7 @@ export function scheduleMagicRotation (botManager) {
   if (botManager.magicRotationPromise) { return botManager.magicRotationPromise; }
   const task = (async () => {
     while (!botManager.isReseting && botManager.channelUsersToMessageQueue.size) {
+      if (!await botManager.waitForAppCheckResume()) { break; }
       const sent = await rotateOnce(botManager);
       if (!sent) {
         if (botManager._adCampaignActive && !getConnectedAdBots(botManager).length) {

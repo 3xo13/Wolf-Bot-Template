@@ -25,14 +25,26 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
     assertConnectionBatchAvailable(botManager, 'room');
     const futureRoomBotCount = botManager.getRoomBots().length + 1;
     assertRoomBotPoolCapacity(futureRoomBotCount);
+    if (botManager.config.baseConfig.excludeAdmins) {
+      await botManager.waitForClassificationAppCheckPrefetch();
+      botManager.getConnectionDescriptor('classification');
+    }
+    const roomAccountIndex = botManager.roomBotsTokens.length;
+    await botManager.ensureAppCheck('room', roomAccountIndex, {
+      accessToken: commandName,
+      continuationKey: `manual-room-${roomAccountIndex}`,
+      continuation: () => handleMagicBotDefaultCommand(botManager, commandName)
+    });
+    const descriptor = botManager.getConnectionDescriptor('room', roomAccountIndex, commandName);
     botManager.addNewRoomBotToken(commandName);
     // Connect the room bot
     let newRoomBot;
     try {
-      [newRoomBot] = await connectBotBatch(botManager, { botType: 'room', count: 1 });
+      [newRoomBot] = await connectBotBatch(botManager, {
+        botType: 'room', count: 1, accountIndex: roomAccountIndex, descriptor
+      });
     } catch (error) {
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
-      await ensureClassificationBots(botManager);
       if (error.code === CONNECTION_BATCH_BUSY) { throw error; }
       startRoomConnectionCooldown(botManager);
       const connectionError = new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`);
@@ -47,7 +59,6 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
       botManager.removeBot('room', newRoomBot);
       await newRoomBot.disconnect();
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
-      await ensureClassificationBots(botManager);
       startRoomConnectionCooldown(botManager);
       throw new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`, { cause: error });
     }
@@ -59,7 +70,6 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
       botManager.removeBot('room', newRoomBot);
       await newRoomBot.disconnect();
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
-      await ensureClassificationBots(botManager);
       startRoomConnectionCooldown(botManager);
       throw new Error(`${error.message}\n${userMessages.roomConnectionCooldownStarted}`, { cause: error });
     }
@@ -68,7 +78,6 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
       botManager.removeBot('room', newRoomBot);
       await newRoomBot.disconnect();
       botManager.roomBotsTokens = botManager.roomBotsTokens.slice(0, -1);
-      await ensureClassificationBots(botManager);
       startRoomConnectionCooldown(botManager);
       throw new Error(`لا يوجد رومات في هذا الحساب\n${userMessages.roomConnectionCooldownStarted}`);
     }
@@ -96,7 +105,7 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
     await sendUpdateEvent(
       botManager,
       updateEvents.room.setup,
-      { token: commandName }
+      {}
     );
 
     if (botManager.getRoomBots().length === parseInt(botManager.config.baseConfig.instanceLimit)) {
@@ -116,7 +125,7 @@ export const handleMagicBotDefaultCommand = async (botManager, commandName) => {
       );
     }
   } catch (error) {
-    console.log('🚀 ~ handleDefaultCommand ~ error:', error);
+    console.log('🚀 ~ handleDefaultCommand ~ error:', error?.message || 'unknown error');
     throw error;
   }
 };

@@ -51,6 +51,13 @@ export const handleRoomCommand = async (token, botManager) => {
     if (!token.startsWith('WE-')) {
       throw new Error('يرجى ادخال توكين الحساب بشكل صحيح\nWE-AAAAAAAA');
     }
+    const roomAccountIndex = 0;
+    await botManager.ensureAppCheck('room', roomAccountIndex, {
+      accessToken: token,
+      continuationKey: `manual-room-${roomAccountIndex}`,
+      continuation: () => handleRoomCommand(token, botManager)
+    });
+    const descriptor = botManager.getConnectionDescriptor('room', roomAccountIndex, token);
     // Set the room bot token in botManager
     // botManager.setRoomBotToken(data);
     botManager.addNewRoomBotToken(token);
@@ -58,7 +65,9 @@ export const handleRoomCommand = async (token, botManager) => {
     // Connect the room bot
     let newRoomBot;
     try {
-      [newRoomBot] = await connectBotBatch(botManager, { botType: 'room', count: 1 });
+      [newRoomBot] = await connectBotBatch(botManager, {
+        botType: 'room', count: 1, accountIndex: roomAccountIndex, descriptor
+      });
     } catch (error) {
       // The token is appended before connect() so it can be selected by the
       // connection factory. A rejected login must roll that provisional entry
@@ -115,9 +124,10 @@ ${userMessages.roomConnectionCooldownStarted}`
       );
     }
     setStepState(botManager, 'room');
+    botManager.appCheckRegistry.markConsumed('room', roomAccountIndex);
 
     // Notify the user of the next step in the workflow
-    await sendUpdateEvent(botManager, updateEvents.room.setup, { token });
+    await sendUpdateEvent(botManager, updateEvents.room.setup, {});
     await sendUpdateEvent(botManager, updateEvents.channels.setup, { channels: channelsIds });
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
@@ -130,7 +140,7 @@ ${userMessages.roomConnectionCooldownStarted}`
     );
   } catch (error) {
     // Log and rethrow any errors encountered during setup
-    console.log('🚀 ~ handleRoomCommand ~ error:', error);
+    console.log('🚀 ~ handleRoomCommand ~ error:', error?.message || 'unknown error');
     throw error;
   }
 };

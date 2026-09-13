@@ -51,6 +51,7 @@ export async function getChannelMembers (botManager, roomBot, channelId, listTyp
       if (botManager.isReseting || (generation !== null && botManager.isClassificationCancelled(generation))) {
         break;
       }
+      if (!await botManager.waitForAppCheckResume()) { break; }
       iterations++;
       const remainingLimit = Math.min(pageSize, limit - totalFetched);
 
@@ -101,6 +102,10 @@ export async function getChannelMembers (botManager, roomBot, channelId, listTyp
           break;
         }
       } catch (error) {
+        if (botManager.isReseting ||
+          (generation !== null && botManager.isClassificationCancelled(generation))) {
+          break;
+        }
         console.error(`Error fetching regular members page ${iterations}:`, error);
         throw error;
       }
@@ -121,6 +126,9 @@ export async function getChannelMembers (botManager, roomBot, channelId, listTyp
   }
 
   // For other list types, use the original implementation
+  if (!await botManager.waitForAppCheckResume()) {
+    return { success: false, code: 499, body: [], totalMembers: 0 };
+  }
   const body = {
     [config.key]: parseInt(channelId.toString()),
     limit

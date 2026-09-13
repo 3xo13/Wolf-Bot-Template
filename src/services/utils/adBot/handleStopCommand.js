@@ -25,6 +25,7 @@ export const handleStopCommand = async (botManager) => {
     await botManager.clearState({ keepResetting: true });
     startAuthenticatedConnectionCooldowns(botManager);
     await sendUpdateEvent(botManager, updateEvents.state.clear, {});
+    botManager.appCheckRegistry.emitSnapshot();
     await sendPrivateMessage(
       botManager.config.baseConfig.orderFrom,
       userMessages.stateCleared,
